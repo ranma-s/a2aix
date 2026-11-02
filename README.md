@@ -20,8 +20,9 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 
 ## いまあるもの / What is here
 
-土台だけです。プロトコルの動作はまだありません。
+土台に、交渉の段階を決めるルールを足してあります。まだ通信はしません。署名も確認しません。段階の説明は [`docs/negotiation-states.md`](docs/negotiation-states.md) です。
 
+- 交渉の段階機械。提案、対案、合意案、人間の承認・却下、3往復、期限を扱います。時計は外から渡します。署名の欄は後で確認するための空席で、中身は見ていません。
 - pnpm の TypeScript モノレポ。コア、アプリ、アダプタ、適合スイートをパッケージに分けてあります。
 - 依存の向きを CI で検査します。コアからアダプタへは戻れません。
 - JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。中身は未実装で、呼ぶと失敗します。テストベクトルは TODO です。
@@ -29,8 +30,9 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 - 適合テスト6項目の置き場所はあります。結果はすべて未実施（`pending`）です。
 - 検査を破る見本が `fixtures/guardrails/` にあります。普通のビルドには入れません。`pnpm guardrails` は、見本が失敗することと、許される書き方は成功することを確かめます。
 
-This revision is the foundation. Protocol behavior is not implemented.
+This revision is the foundation plus the negotiation phase rules. Nothing speaks on the network yet, and signatures are not checked. The plain-language map is [`docs/negotiation-states.md`](docs/negotiation-states.md).
 
+- A negotiation phase machine: proposal, counter-proposal, agreement draft, human approve/reject, a 3-round cap, and deadlines. The clock is injected. The signature field is a placeholder and is not verified.
 - A pnpm TypeScript monorepo split into core, app, adapter, and conformance packages.
 - CI rejects a dependency that points the wrong way. Core cannot import adapters.
 - JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. It throws. Test vectors are TODO.
@@ -84,7 +86,7 @@ packages/config               open / closed
 packages/identity             鍵操作の拒否。鍵そのものは無い
 packages/protocol-core        拡張 URI 4つ
 packages/log                   透明性ログのスタブ
-packages/a2a-ext-*             交渉・委任範囲・承認・履歴のスタブ
+packages/a2a-ext-*             交渉の段階機械。委任範囲・承認・履歴はスタブ
 packages/node                  ノードのスタブ。ポートは開かない
 packages/ledger                台帳のスタブ
 packages/approval-app          承認アプリのスタブ。署名しない
@@ -93,6 +95,7 @@ packages/conformance           適合テストの仮実装
 deploy/                        設定例だけ
 vectors/                       固定ベクトルの置き場所。中身はまだ無い
 docs/spec/                     仕様（CC BY 4.0）
+docs/negotiation-states.md     交渉の段階。非エンジニア向け
 docs/team.md                   チーム
 .cursor/skills/verify-ix-node/ 検証手順のスタブ
 .cursor/settings.json          pstack を有効にする
