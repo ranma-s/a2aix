@@ -8,6 +8,8 @@
 
 The normative protocol text for implementation is the section **交渉の拡張仕様（案 v0.3）**. Business numbers in the first part are hypotheses, not requirements.
 
+How those phases move, in plain language, is [`../negotiation-states.md`](../negotiation-states.md). That page describes the phase machine. It does not change the spec.
+
 ## License
 
 This text is **CC BY 4.0**: <https://creativecommons.org/licenses/by/4.0/>
@@ -23,6 +25,8 @@ Code in the rest of the repository is **Apache-2.0**. See `/LICENSE` and `/NOTIC
 3. 副業人材への誘い文句の案。
 
 実装が従う本文は **交渉の拡張仕様（案 v0.3）** です。前半の事業の数字は仮説であり、要件ではありません。
+
+段階の進み方を、エンジニア以外向けに書いたものが [`../negotiation-states.md`](../negotiation-states.md) です。仕様そのものは変えていません。
 
 ## ライセンス
 

@@ -1,2 +1,3 @@
 date	id	decision	reason
 2026-11-02	T01	Foundation only: pnpm workspace, core/app/adapter/suite packages, JCS reserved at @ix/jcs, no crypto and no signing	Protocol behavior, signatures, and key handling wait for later tickets and a human security reviewer
+2026-11-02	T08	Negotiation phases are a pure state machine in @ix/a2a-ext-negotiation. Messages are typed data. Each message carries a signature placeholder that is not checked, and the session records verification as deferred. The round cap and the clock are inputs. No JCS, keys, mandate checks, or approval cryptography.	The director asked for the phase rules before any signing design. A human security reviewer still has to accept that design before the placeholder can be replaced.

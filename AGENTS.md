@@ -4,7 +4,7 @@ Rules for agents working on IX. Japanese is the director's language. The table i
 
 Read `docs/spec/ix-spec-v0.3.md`, section `交渉の拡張仕様（案 v0.3）`, before changing protocol packages. The business numbers above that section are not requirements. `docs/team.md` names who must look at a change.
 
-This revision is the foundation. Do not implement publish, query, subscribe, negotiation, mandates, approvals, transcripts, inclusion proofs, or MCP tools. Do not add a server to make the verification skill look runnable.
+This revision is the foundation, plus the negotiation phase machine in `@ix/a2a-ext-negotiation`. Do not implement publish, query, subscribe, wire negotiation, mandates, approval cryptography, transcripts, inclusion proofs, or MCP tools. The phase machine is pure logic: typed messages, an injected clock, and a signature placeholder that is not verified. Do not add a server to make the verification skill look runnable.
 
 ## Rules
 
@@ -41,7 +41,7 @@ These are not auto-merged, even when CI is green. Stop and name them in the PR. 
 | `packages/identity` | core | Refusal for key operations. No keys. |
 | `packages/protocol-core` | core | The four extension URIs. |
 | `packages/log` | core | Record-kind names and a refusal for inclusion proofs. |
-| `packages/a2a-ext-*` | core | Profile-extension stubs. Negotiation depends on the other three. |
+| `packages/a2a-ext-*` | core | Profile-extension stubs, plus the negotiation phase machine. Negotiation depends on the other three. The machine does not sign, hash, or enforce a mandate. |
 | `packages/node` | app | How `open` and `closed` differ. No port. |
 | `packages/ledger` | app | Recognizes log record kinds. Does not write a chain. |
 | `packages/approval-app` | app | Refuses to sign. This is not `@ix/a2a-ext-approval`. |
