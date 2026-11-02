@@ -40,6 +40,15 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm boundaries
 
+  guardrails:
+    name: guardrail self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm guardrails
+
   test:
     name: unit tests
     runs-on: ubuntu-latest

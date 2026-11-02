@@ -55,6 +55,7 @@ This is the only drive that exists. It runs, in order:
 pnpm typecheck
 pnpm lint
 pnpm boundaries
+pnpm guardrails
 pnpm test
 pnpm conformance
 ```
@@ -79,6 +80,7 @@ Proof standard for this revision:
 - A unit test that a stub throws, or that `open` sets `acceptsPublicPublish`, proves only that fact. It does not prove a feature in the map.
 - Do not mock a relay, a counterparty, or a key to manufacture a protocol pass. No production boundary isolates those systems yet, because the systems are not built.
 - The conformance placeholder must stay `pending`.
+- `pnpm guardrails` must fail the dummies in `fixtures/guardrails/`. A green guardrail run means those dummies failed and the normal tree passed. It does not mean the dummies were cleaned up.
 
 ## Cleanup
 
@@ -92,7 +94,9 @@ Cleanup does not kill a process by name. Drive does not leave a process. Cleanup
 
 `scripts/verify-ix-node.mjs` is the helper. Invoke it as shown above. It takes one argument: `doctor`, `drive`, or `cleanup`.
 
-`scripts/check-boundaries.mjs` is the dependency-direction check doctor runs. It also runs `runSelfTest` in `scripts/boundaries-lib.mjs`, which must keep rejecting a core-to-adapter import, `JSON.stringify` outside `@ix/jcs`, a crypto import, a comment in package source, an empty `catch`, and an unbounded loop.
+`scripts/check-boundaries.mjs` is the dependency-direction check doctor runs. It also runs `runSelfTest` in `scripts/boundaries-lib.mjs`, which must keep rejecting a core-to-adapter import, `JSON.stringify` outside `@ix/jcs`, a crypto import, a comment in package source, an empty `catch`, and an unbounded loop. A leading `/* SPDX-License-Identifier: Apache-2.0 */` header is the only comment it allows.
+
+`scripts/prove-guardrails.mjs` is the guardrail self-test (`pnpm guardrails`). It must keep failing the dummies in `fixtures/guardrails/` and passing the real tree.
 
 ## Maintenance
 

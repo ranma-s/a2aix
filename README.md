@@ -27,6 +27,7 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 - JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。中身は未実装で、呼ぶと失敗します。テストベクトルは TODO です。
 - 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。
 - 適合テスト6項目の置き場所はあります。結果はすべて未実施（`pending`）です。
+- 検査を破る見本が `fixtures/guardrails/` にあります。普通のビルドには入れません。`pnpm guardrails` は、見本が失敗することと、許される書き方は成功することを確かめます。
 
 This revision is the foundation. Protocol behavior is not implemented.
 
@@ -35,6 +36,7 @@ This revision is the foundation. Protocol behavior is not implemented.
 - JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. It throws. Test vectors are TODO.
 - Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them.
 - The six conformance items have a home. Every result is `pending`.
+- Violating dummies live in `fixtures/guardrails/` and stay out of the normal build. `pnpm guardrails` requires those dummies to fail and the allowed forms to pass.
 
 役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。
 
@@ -54,12 +56,13 @@ pnpm check
 | Command | What it checks |
 | --- | --- |
 | `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm lint` | ESLint。`any`、型アサーション、`ts-ignore` を禁止します。`JSON.stringify` は `@ix/jcs` の外では禁止です。 |
-| `pnpm boundaries` | 依存の向き、コメント禁止、空の `catch`、無期限ループ、暗号ライブラリ、秘密鍵。検査自体の自己テストも含みます。 |
+| `pnpm lint` | ESLint。`any`、型アサーション（`as` と山括弧）、非nullアサーション、`ts-ignore`、ソース内コメントを禁止します。例外は先頭の `/* SPDX-License-Identifier: Apache-2.0 */` だけです。`as const` は使えます。`JSON.stringify` は `@ix/jcs` の外では禁止です。 |
+| `pnpm boundaries` | 依存の向き、コメント禁止（ライセンスヘッダを除く）、空の `catch`、無期限ループ、暗号ライブラリ、秘密鍵。検査自体の自己テストも含みます。 |
+| `pnpm guardrails` | 禁止事項の見本が失敗し、許される書き方は成功する。`any`、危険な型変換、コメント、コアからアダプタまたはアプリへの依存。 |
 | `pnpm test` | ユニットテスト。適合スイートは含みません。 |
 | `pnpm conformance` | 適合テスト6項目の仮実行。すべて `pending` であることを確かめます。 |
 
-CI は同じ5つを、別々のジョブで実行します。
+CI は同じ6つを、別々のジョブで実行します。
 
 **適合テストのジョブが緑でも、6項目は未実施です。** 緑は「仮の一覧がまだ未実施のまま」という意味です。
 
@@ -92,6 +95,8 @@ vectors/                       固定ベクトルの置き場所。中身はま�
 docs/spec/                     仕様（CC BY 4.0）
 docs/team.md                   チーム
 .cursor/skills/verify-ix-node/ 検証手順のスタブ
+.cursor/settings.json          pstack を有効にする
+fixtures/guardrails/           検査を破る見本。ビルド対象外
 ```
 
 ## ライセンス / License

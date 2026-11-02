@@ -1,0 +1,5 @@
+{
+  "name": "@ix/adapter-pkg",
+  "private": true,
+  "type": "module"
+}

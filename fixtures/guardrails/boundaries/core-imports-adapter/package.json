@@ -1,0 +1,5 @@
+{
+  "name": "guardrail-core-imports-adapter",
+  "private": true,
+  "type": "module"
+}

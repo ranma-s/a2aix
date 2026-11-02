@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { isPermittedLicenseHeader } from "./license-header.mjs";
 
 const layers = {
   core: new Set(["core"]),
@@ -339,12 +340,16 @@ export function evaluateSource(input) {
       kind === ts.SyntaxKind.SingleLineCommentTrivia ||
       kind === ts.SyntaxKind.MultiLineCommentTrivia
     ) {
-      const position = source.getLineAndCharacterOfPosition(scanner.getTokenPos());
-      add(
-        violations,
-        "comment",
-        `${normalize(input.fileName)}:${String(position.line + 1)}: package source cannot contain comments. Encode the constraint in a type, a lint rule, or AGENTS.md.`,
-      );
+      const tokenPos = scanner.getTokenPos();
+      const tokenText = scanner.getTokenText();
+      if (!isPermittedLicenseHeader(input.text, tokenPos, tokenText)) {
+        const position = source.getLineAndCharacterOfPosition(tokenPos);
+        add(
+          violations,
+          "comment",
+          `${normalize(input.fileName)}:${String(position.line + 1)}: package source cannot contain comments. The only exception is a leading /* SPDX-License-Identifier: Apache-2.0 */ header. Encode any other constraint in a type, a lint rule, or AGENTS.md.`,
+        );
+      }
     }
     kind = scanner.scan();
   }
@@ -959,6 +964,108 @@ export function runSelfTest() {
       [],
     ),
     "external-import",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "leading spdx header is allowed",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      '/* SPDX-License-Identifier: Apache-2.0 */\nexport const mode = "open" as const;\n',
+      "@ix/config",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "shebang plus spdx header is allowed",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      '#!/usr/bin/env node\n/* SPDX-License-Identifier: Apache-2.0 */\nexport const mode = "open" as const;\n',
+      "@ix/config",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "spdx line comment is rejected",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      '// SPDX-License-Identifier: Apache-2.0\nexport const mode = "open" as const;\n',
+      "@ix/config",
+      [],
+    ),
+    "comment",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "spdx header after code is rejected",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      'export const mode = "open" as const;\n/* SPDX-License-Identifier: Apache-2.0 */\n',
+      "@ix/config",
+      [],
+    ),
+    "comment",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "spdx header with extra prose is rejected",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      "/* SPDX-License-Identifier: Apache-2.0\n   extra note\n*/\nexport const mode = \"open\" as const;\n",
+      "@ix/config",
+      [],
+    ),
+    "comment",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "starred spdx header is rejected",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      "/*\n * SPDX-License-Identifier: Apache-2.0\n */\nexport const mode = \"open\" as const;\n",
+      "@ix/config",
+      [],
+    ),
+    "comment",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "other spdx identifier is rejected",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      '/* SPDX-License-Identifier: MIT */\nexport const mode = "open" as const;\n',
+      "@ix/config",
+      [],
+    ),
+    "comment",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "comment after a valid header is rejected",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      '/* SPDX-License-Identifier: Apache-2.0 */\nexport const mode = "open" as const;\n// tail\n',
+      "@ix/config",
+      [],
+    ),
+    "comment",
   );
 
   cases += 1;

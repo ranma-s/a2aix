@@ -71,6 +71,7 @@ function drive() {
     run("pnpm", ["typecheck"]),
     run("pnpm", ["lint"]),
     run("pnpm", ["boundaries"]),
+    run("pnpm", ["guardrails"]),
     run("pnpm", ["test"]),
     run("pnpm", ["conformance"]),
   ];

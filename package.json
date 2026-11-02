@@ -11,9 +11,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "boundaries": "node scripts/check-boundaries.mjs",
+    "guardrails": "node scripts/prove-guardrails.mjs",
     "test": "vitest run",
     "conformance": "vitest run --config vitest.conformance.config.ts",
-    "check": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm test && pnpm conformance",
+    "check": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm guardrails && pnpm test && pnpm conformance",
     "verify": "node scripts/verify-ix-node.mjs drive"
   },
   "devDependencies": {

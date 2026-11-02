@@ -1,0 +1,8 @@
+{
+  "name": "@ix/core-pkg",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ix/app-pkg": "workspace:*"
+  }
+}
