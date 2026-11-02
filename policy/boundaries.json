@@ -20,6 +20,11 @@
       "layer": "core",
       "dependsOn": []
     },
+    "@ix/distribution": {
+      "dir": "packages/distribution",
+      "layer": "core",
+      "dependsOn": []
+    },
     "@ix/log": {
       "dir": "packages/log",
       "layer": "core",
@@ -53,7 +58,7 @@
     "@ix/node": {
       "dir": "packages/node",
       "layer": "app",
-      "dependsOn": ["@ix/config"]
+      "dependsOn": ["@ix/config", "@ix/distribution"]
     },
     "@ix/ledger": {
       "dir": "packages/ledger",
@@ -73,7 +78,7 @@
     "@ix/adapters": {
       "dir": "packages/adapters",
       "layer": "adapter",
-      "dependsOn": ["@ix/config"]
+      "dependsOn": ["@ix/config", "@ix/distribution", "@ix/node"]
     }
   }
 }

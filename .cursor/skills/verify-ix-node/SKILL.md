@@ -5,11 +5,11 @@ description: Verification stub for an IX node. Use when an agent must prove a ch
 
 # Verify an IX node
 
-IX is a job-exchange node. This revision has no process to launch. A green check suite is evidence that the foundation still holds. It is not evidence that publish, negotiation, approval, or the transparency log works.
+IX is a job-exchange node. This revision has no process to launch. A green check suite is evidence that the checks still hold. It is not evidence that a listening relay, wire negotiation, approval, or the transparency log works. Header activation and in-memory publish, query, and subscribe have unit tests. Drive does not call them.
 
 The feature map under `features/` is the list of user-facing behavior. Every entry is blocked. Do not weaken an entry so a drive can pass it.
 
-日本語: これは検証手順のスタブです。ノードはまだ起動しません。`drive` が緑でも、流通・交渉・承認・ログは未検証です。
+日本語: これは検証手順のスタブです。ノードはまだ起動しません。`drive` が緑でも、ポートを開いた流通・通信での交渉・承認・ログは未検証です。拡張ヘッダーと、メモリ上の掲載・検索・購読はユニットテストだけです。
 
 ## Launch
 
@@ -77,8 +77,8 @@ Proof standard for this revision:
 
 - Run the commands above. Do not substitute a claim that the code looks right.
 - Capture the exit codes, not only the last line.
-- A unit test that a stub throws, or that `open` sets `acceptsPublicPublish`, proves only that fact. It does not prove a feature in the map.
-- Do not mock a relay, a counterparty, or a key to manufacture a protocol pass. No production boundary isolates those systems yet, because the systems are not built.
+- A unit test proves only what it asserts. Header activation and in-memory publish, query, and subscribe have unit tests. Those tests are not a drive, and they do not verify a signature. `protocolFeaturesDriven` stays empty.
+- Do not mock a counterparty or a key to manufacture a protocol pass. The in-memory relay is real code under unit tests. Drive still does not speak to it, and a unit test is not a network pass.
 - The conformance placeholder must stay `pending`.
 - `pnpm guardrails` must fail the dummies in `fixtures/guardrails/`. A green guardrail run means those dummies failed and the normal tree passed. It does not mean the dummies were cleaned up.
 

@@ -4,7 +4,7 @@ Index of user-facing behavior. Every feature is blocked in this revision. `node 
 
 | Feature | File | State |
 | --- | --- | --- |
-| Distribution | [distribution.md](distribution.md) | Blocked. No relay. |
+| Distribution | [distribution.md](distribution.md) | Blocked. In-memory relay only; drive opens no port. |
 | Negotiation | [negotiation.md](negotiation.md) | Blocked. Phase machine is local only; drive sends no messages. |
 | Mandate | [mandate.md](mandate.md) | Blocked. No mandate document. |
 | Approval | [approval.md](approval.md) | Blocked. Signing throws. |
