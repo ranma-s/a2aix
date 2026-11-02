@@ -1,0 +1,990 @@
+import fs from "node:fs";
+import path from "node:path";
+import ts from "typescript";
+
+const layers = {
+  core: new Set(["core"]),
+  app: new Set(["core"]),
+  adapter: new Set(["core", "app"]),
+  suite: new Set(["core", "app"]),
+};
+
+const bannedExact = new Set([
+  "crypto",
+  "node:crypto",
+  "jose",
+  "elliptic",
+  "tweetnacl",
+  "secp256k1",
+  "ethers",
+  "web3",
+  "openpgp",
+  "libsodium-wrappers",
+  "did-jwt",
+  "did-resolver",
+  "jsonld-signatures",
+  "jsonwebtoken",
+  "jws",
+]);
+
+const bannedPrefixes = ["@noble/", "@stablelib/", "@transmute/"];
+
+const pemLabels = [
+  "PRIVATE KEY",
+  "RSA PRIVATE KEY",
+  "OPENSSH PRIVATE KEY",
+  "EC PRIVATE KEY",
+  "PGP PRIVATE KEY BLOCK",
+];
+
+const textExtensions = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".yml",
+  ".yaml",
+  ".md",
+  ".txt",
+  ".tsv",
+]);
+
+export function layerAllows(importerLayer, dependencyLayer) {
+  const allowed = layers[importerLayer];
+  return allowed?.has(dependencyLayer) ?? false;
+}
+
+export function isBannedModule(specifier) {
+  if (bannedExact.has(specifier)) {
+    return true;
+  }
+  return bannedPrefixes.some(
+    (prefix) => specifier === prefix.slice(0, -1) || specifier.startsWith(prefix),
+  );
+}
+
+export function hasPrivateKeyBlock(text) {
+  return pemLabels.some((label) => text.includes(`-----BEGIN ${label}-----`));
+}
+
+function normalize(fileName) {
+  return fileName.split(path.sep).join("/");
+}
+
+export function isJcsImplementation(fileName) {
+  return normalize(fileName).includes("/packages/jcs/src/");
+}
+
+export function isTestFile(fileName) {
+  return normalize(fileName).split("/").includes("test");
+}
+
+function lineOf(source, node) {
+  const position = source.getLineAndCharacterOfPosition(node.getStart(source));
+  return position.line + 1;
+}
+
+function unwrap(expression) {
+  let current = expression;
+  while (ts.isParenthesizedExpression(current)) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function add(violations, reason, message) {
+  violations.push({ reason, message });
+}
+
+function definedName(node) {
+  if (
+    (ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isFunctionExpression(node)) &&
+    node.name !== undefined &&
+    ts.isIdentifier(node.name)
+  ) {
+    return node.name.text;
+  }
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+    return node.name.text;
+  }
+  if (
+    (ts.isPropertyAssignment(node) || ts.isMethodDeclaration(node)) &&
+    ts.isIdentifier(node.name)
+  ) {
+    return node.name.text;
+  }
+  return undefined;
+}
+
+function isEmptyFunctionBody(node) {
+  return ts.isBlock(node) && node.statements.length === 0;
+}
+
+function isJsonStringifyCallee(expression) {
+  const callee = unwrap(expression);
+  if (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(unwrap(callee.expression)) &&
+    unwrap(callee.expression).text === "JSON" &&
+    callee.name.text === "stringify"
+  ) {
+    return true;
+  }
+  if (
+    ts.isElementAccessExpression(callee) &&
+    ts.isIdentifier(unwrap(callee.expression)) &&
+    unwrap(callee.expression).text === "JSON" &&
+    callee.argumentExpression !== undefined &&
+    ts.isStringLiteral(callee.argumentExpression) &&
+    callee.argumentExpression.text === "stringify"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function moduleSpecifierText(node) {
+  if (
+    (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+    node.moduleSpecifier !== undefined &&
+    ts.isStringLiteral(node.moduleSpecifier)
+  ) {
+    return node.moduleSpecifier.text;
+  }
+  return undefined;
+}
+
+function isRequireCall(node) {
+  if (!ts.isCallExpression(node)) {
+    return undefined;
+  }
+  const callee = unwrap(node.expression);
+  const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
+  const isRequire = ts.isIdentifier(callee) && callee.text === "require";
+  if (!isImport && !isRequire) {
+    return undefined;
+  }
+  const first = node.arguments[0];
+  if (first !== undefined && ts.isStringLiteral(first)) {
+    return first.text;
+  }
+  return undefined;
+}
+
+function checkSpecifier(violations, specifier, location, context) {
+  if (isBannedModule(specifier)) {
+    add(
+      violations,
+      "banned-module",
+      `${location}: import "${specifier}" is banned. Key handling and signing need a human security reviewer. Do not add a crypto library.`,
+    );
+    return;
+  }
+  if (specifier.startsWith(".")) {
+    const resolved = path.resolve(path.dirname(context.fileName), specifier);
+    const packageDir = path.resolve(context.packageDir);
+    const inside =
+      resolved === packageDir || resolved.startsWith(packageDir + path.sep);
+    if (!inside) {
+      add(
+        violations,
+        "escaped-relative-import",
+        `${location}: relative import "${specifier}" leaves ${context.packageName}. Depend on a package instead.`,
+      );
+    }
+    return;
+  }
+  if (specifier.startsWith("@ix/")) {
+    const dependency = context.policy.packages[specifier];
+    const importer = context.policy.packages[context.packageName];
+    if (dependency === undefined || importer === undefined) {
+      add(
+        violations,
+        "unknown-package",
+        `${location}: ${specifier} is not in policy/boundaries.json.`,
+      );
+      return;
+    }
+    if (!context.declaredNames.has(specifier) || !importer.dependsOn.includes(specifier)) {
+      add(
+        violations,
+        "undeclared",
+        `${location}: ${context.packageName} imports ${specifier}, but that edge is not declared in both package.json and policy/boundaries.json.`,
+      );
+    }
+    if (!layerAllows(importer.layer, dependency.layer)) {
+      add(
+        violations,
+        "layer",
+        `${location}: ${importer.layer} package ${context.packageName} cannot depend on ${dependency.layer} package ${specifier}.`,
+      );
+    }
+    return;
+  }
+  const externalOk = context.isTest && specifier === "vitest";
+  if (!externalOk) {
+    add(
+      violations,
+      "external-import",
+      `${location}: "${specifier}" is not allowed in ${context.packageName}. Packages import @ix/* packages only. Test files may import vitest.`,
+    );
+  }
+}
+
+export function evaluateSource(input) {
+  const violations = [];
+  const source = ts.createSourceFile(
+    input.fileName,
+    input.text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const context = {
+    fileName: input.fileName,
+    packageDir: input.packageDir,
+    packageName: input.packageName,
+    policy: input.policy,
+    declaredNames: input.declaredNames,
+    isTest: isTestFile(input.fileName),
+  };
+  const jcsImplementation = isJcsImplementation(input.fileName);
+
+  function visit(node) {
+    const specifier = moduleSpecifierText(node) ?? isRequireCall(node);
+    if (specifier !== undefined) {
+      checkSpecifier(
+        violations,
+        specifier,
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}`,
+        context,
+      );
+    }
+    if (ts.isCallExpression(node) && isJsonStringifyCallee(node.expression)) {
+      if (!jcsImplementation) {
+        add(
+          violations,
+          "json-stringify",
+          `${normalize(input.fileName)}:${String(lineOf(source, node))}: JSON.stringify cannot canonicalize. Use canonicalize from @ix/jcs.`,
+        );
+      }
+    }
+    if (
+      (ts.isWhileStatement(node) || ts.isDoStatement(node)) &&
+      node.expression.kind === ts.SyntaxKind.TrueKeyword
+    ) {
+      add(
+        violations,
+        "unbounded-loop",
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}: unbounded loop. Retries need a limit.`,
+      );
+    }
+    if (ts.isForStatement(node) && node.condition === undefined) {
+      add(
+        violations,
+        "unbounded-loop",
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}: for loop without a condition. Retries need a limit.`,
+      );
+    }
+    if (ts.isCatchClause(node) && node.block.statements.length === 0) {
+      add(
+        violations,
+        "swallowed-error",
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}: empty catch. Handle the error or let it fail.`,
+      );
+    }
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(unwrap(node.expression))) {
+      const access = unwrap(node.expression);
+      if (ts.isIdentifier(access.name) && access.name.text === "catch") {
+        const callback = node.arguments[0];
+        if (
+          callback !== undefined &&
+          (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
+          isEmptyFunctionBody(callback.body)
+        ) {
+          add(
+            violations,
+            "swallowed-error",
+            `${normalize(input.fileName)}:${String(lineOf(source, node))}: empty .catch swallows the rejection.`,
+          );
+        }
+      }
+    }
+    const name = definedName(node);
+    if (name === "canonicalize" && !jcsImplementation) {
+      add(
+        violations,
+        "canonicalize-defined",
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}: canonicalize is defined only in @ix/jcs. Import it from there.`,
+      );
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(source);
+
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    false,
+    ts.LanguageVariant.Standard,
+    input.text,
+  );
+  let kind = scanner.scan();
+  while (kind !== ts.SyntaxKind.EndOfFileToken) {
+    if (
+      kind === ts.SyntaxKind.SingleLineCommentTrivia ||
+      kind === ts.SyntaxKind.MultiLineCommentTrivia
+    ) {
+      const position = source.getLineAndCharacterOfPosition(scanner.getTokenPos());
+      add(
+        violations,
+        "comment",
+        `${normalize(input.fileName)}:${String(position.line + 1)}: package source cannot contain comments. Encode the constraint in a type, a lint rule, or AGENTS.md.`,
+      );
+    }
+    kind = scanner.scan();
+  }
+
+  if (hasPrivateKeyBlock(input.text)) {
+    add(
+      violations,
+      "private-key",
+      `${normalize(input.fileName)}: private key material is not allowed in the tree.`,
+    );
+  }
+
+  return violations;
+}
+
+function dependencySections(packageJson) {
+  const sections = [
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "optionalDependencies",
+  ];
+  const found = [];
+  for (const section of sections) {
+    const block = packageJson[section];
+    if (block === undefined || block === null || typeof block !== "object") {
+      continue;
+    }
+    for (const [name, version] of Object.entries(block)) {
+      found.push({ section, name, version });
+    }
+  }
+  return found;
+}
+
+export function evaluatePackageManifest(packageName, packageJson, policy) {
+  const violations = [];
+  const entry = policy.packages[packageName];
+  if (entry === undefined) {
+    add(violations, "unknown-package", `${packageName} is not in policy/boundaries.json.`);
+    return violations;
+  }
+  if (packageJson.imports !== undefined) {
+    add(
+      violations,
+      "external-import",
+      `${packageName}: package.json imports field is not allowed.`,
+    );
+  }
+  const declared = dependencySections(packageJson);
+  const declaredIx = [];
+  for (const dependency of declared) {
+    if (isBannedModule(dependency.name)) {
+      add(
+        violations,
+        "banned-module",
+        `${packageName}: dependency ${dependency.name} is banned until a human security reviewer accepts key handling.`,
+      );
+      continue;
+    }
+    if (!dependency.name.startsWith("@ix/")) {
+      add(
+        violations,
+        "external-import",
+        `${packageName}: external dependency ${dependency.name} is not allowed in T01. Add it only with a boundary change.`,
+      );
+      continue;
+    }
+    if (dependency.version !== "workspace:*") {
+      add(
+        violations,
+        "undeclared",
+        `${packageName}: ${dependency.name} must use version workspace:*.`,
+      );
+    }
+    declaredIx.push(dependency.name);
+    const dependencyEntry = policy.packages[dependency.name];
+    if (dependencyEntry === undefined) {
+      add(violations, "unknown-package", `${packageName} depends on unknown ${dependency.name}.`);
+      continue;
+    }
+    if (!entry.dependsOn.includes(dependency.name)) {
+      add(
+        violations,
+        "undeclared",
+        `${packageName}: ${dependency.name} is not in dependsOn. Update policy/boundaries.json in the same change.`,
+      );
+    }
+    if (!layerAllows(entry.layer, dependencyEntry.layer)) {
+      add(
+        violations,
+        "layer",
+        `${packageName}: ${entry.layer} cannot depend on ${dependencyEntry.layer} package ${dependency.name}.`,
+      );
+    }
+  }
+  for (const allowed of entry.dependsOn) {
+    if (!declaredIx.includes(allowed)) {
+      add(
+        violations,
+        "policy-drift",
+        `${packageName}: policy allows ${allowed} but package.json does not depend on it.`,
+      );
+    }
+  }
+  return violations;
+}
+
+export function validatePolicy(policy) {
+  const violations = [];
+  const names = Object.keys(policy.packages);
+  for (const name of names) {
+    const entry = policy.packages[name];
+    if (!Object.hasOwn(layers, entry.layer)) {
+      add(violations, "layer", `${name}: unknown layer ${String(entry.layer)}.`);
+    }
+    const seen = new Set();
+    for (const dependency of entry.dependsOn) {
+      if (dependency === name) {
+        add(violations, "layer", `${name} cannot depend on itself.`);
+      }
+      if (seen.has(dependency)) {
+        add(violations, "policy-drift", `${name}: duplicate dependsOn entry ${dependency}.`);
+      }
+      seen.add(dependency);
+      const target = policy.packages[dependency];
+      if (target === undefined) {
+        add(violations, "unknown-package", `${name} depends on unknown ${dependency}.`);
+        continue;
+      }
+      if (!layerAllows(entry.layer, target.layer)) {
+        add(
+          violations,
+          "layer",
+          `${name}: policy edge ${entry.layer} -> ${target.layer} (${dependency}) is illegal.`,
+        );
+      }
+    }
+  }
+  return violations;
+}
+
+function readJson(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function walkFiles(directory) {
+  const found = [];
+  if (!fs.existsSync(directory)) {
+    return found;
+  }
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (
+      entry.name === "node_modules" ||
+      entry.name === "dist" ||
+      entry.name === "artifacts" ||
+      entry.name === ".git"
+    ) {
+      continue;
+    }
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...walkFiles(full));
+      continue;
+    }
+    if (textExtensions.has(path.extname(entry.name))) {
+      found.push(full);
+    }
+  }
+  return found;
+}
+
+function checkExampleConfigs(root) {
+  const violations = [];
+  const expected = [
+    ["deploy/node/config.open.example.json", "open"],
+    ["deploy/node/config.closed.example.json", "closed"],
+  ];
+  for (const [relativePath, mode] of expected) {
+    const full = path.join(root, relativePath);
+    if (!fs.existsSync(full)) {
+      add(violations, "policy-drift", `${relativePath} is missing.`);
+      continue;
+    }
+    let parsed;
+    try {
+      parsed = readJson(full);
+    } catch {
+      add(violations, "policy-drift", `${relativePath} is not valid JSON.`);
+      continue;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      add(violations, "policy-drift", `${relativePath} must be a JSON object.`);
+      continue;
+    }
+    const keys = Object.keys(parsed);
+    if (keys.length !== 1 || keys[0] !== "mode" || parsed.mode !== mode) {
+      add(
+        violations,
+        "policy-drift",
+        `${relativePath} must be exactly { "mode": "${mode}" }.`,
+      );
+    }
+  }
+  return violations;
+}
+
+export function checkRepository(root) {
+  const policy = readJson(path.join(root, "policy/boundaries.json"));
+  const violations = validatePolicy(policy);
+  const packagesDir = path.join(root, "packages");
+  const onDisk = fs
+    .readdirSync(packagesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  const inPolicy = Object.values(policy.packages)
+    .map((entry) => entry.dir.replace(/^packages\//, ""))
+    .sort();
+  if (onDisk.join("\n") !== inPolicy.join("\n")) {
+    add(
+      violations,
+      "policy-drift",
+      `packages on disk [${onDisk.join(", ")}] do not match policy [${inPolicy.join(", ")}].`,
+    );
+  }
+  for (const [packageName, entry] of Object.entries(policy.packages)) {
+    const packageDir = path.join(root, entry.dir);
+    const manifestPath = path.join(packageDir, "package.json");
+    if (!fs.existsSync(manifestPath)) {
+      add(violations, "policy-drift", `${packageName}: missing ${entry.dir}/package.json.`);
+      continue;
+    }
+    const manifest = readJson(manifestPath);
+    if (manifest.name !== packageName) {
+      add(
+        violations,
+        "policy-drift",
+        `${entry.dir}/package.json name is ${String(manifest.name)}, expected ${packageName}.`,
+      );
+    }
+    violations.push(...evaluatePackageManifest(packageName, manifest, policy));
+    const declaredNames = new Set(
+      dependencySections(manifest)
+        .map((dependency) => dependency.name)
+        .filter((name) => name.startsWith("@ix/")),
+    );
+    const sourceDir = path.join(packageDir, "src");
+    const testDir = path.join(packageDir, "test");
+    const files = [...walkFiles(sourceDir), ...walkFiles(testDir)];
+    for (const fileName of files) {
+      if (!fileName.endsWith(".ts")) {
+        continue;
+      }
+      const text = fs.readFileSync(fileName, "utf8");
+      violations.push(
+        ...evaluateSource({
+          text,
+          fileName,
+          packageDir,
+          packageName,
+          policy,
+          declaredNames,
+        }),
+      );
+    }
+  }
+  for (const fileName of walkFiles(root)) {
+    if (normalize(fileName).includes("/packages/") && fileName.endsWith(".ts")) {
+      continue;
+    }
+    const text = fs.readFileSync(fileName, "utf8");
+    if (hasPrivateKeyBlock(text)) {
+      add(
+        violations,
+        "private-key",
+        `${path.relative(root, fileName)}: private key material is not allowed in the tree.`,
+      );
+    }
+  }
+  const rootManifest = readJson(path.join(root, "package.json"));
+  for (const dependency of dependencySections(rootManifest)) {
+    if (isBannedModule(dependency.name)) {
+      add(
+        violations,
+        "banned-module",
+        `root package.json dependency ${dependency.name} is banned until a human security reviewer accepts key handling.`,
+      );
+    }
+  }
+  violations.push(...checkExampleConfigs(root));
+  return violations;
+}
+
+function fixturePolicy() {
+  return {
+    packages: {
+      "@ix/jcs": { dir: "packages/jcs", layer: "core", dependsOn: [] },
+      "@ix/config": { dir: "packages/config", layer: "core", dependsOn: [] },
+      "@ix/log": { dir: "packages/log", layer: "core", dependsOn: [] },
+      "@ix/node": { dir: "packages/node", layer: "app", dependsOn: ["@ix/config"] },
+      "@ix/ledger": { dir: "packages/ledger", layer: "app", dependsOn: [] },
+      "@ix/adapters": { dir: "packages/adapters", layer: "adapter", dependsOn: ["@ix/config"] },
+      "@ix/conformance": {
+        dir: "packages/conformance",
+        layer: "suite",
+        dependsOn: [],
+      },
+    },
+  };
+}
+
+function sourceCase(fileName, text, packageName, declared) {
+  const policy = fixturePolicy();
+  return evaluateSource({
+    text,
+    fileName,
+    packageDir: path.posix.join("/virtual", policy.packages[packageName].dir),
+    packageName,
+    policy,
+    declaredNames: new Set(declared),
+  });
+}
+
+function assertReason(failures, label, violations, reason) {
+  if (!violations.some((violation) => violation.reason === reason)) {
+    failures.push(`${label}: expected ${reason}, got ${JSON.stringify(violations)}`);
+  }
+}
+
+function assertClean(failures, label, violations) {
+  if (violations.length > 0) {
+    failures.push(`${label}: expected no violations, got ${JSON.stringify(violations)}`);
+  }
+}
+
+export function runSelfTest() {
+  const failures = [];
+  const policy = fixturePolicy();
+  let cases = 0;
+
+  cases += 1;
+  assertReason(
+    failures,
+    "core cannot import adapter",
+    sourceCase(
+      "/virtual/packages/jcs/src/index.ts",
+      'import "@ix/adapters";\nexport const status = "stub" as const;\n',
+      "@ix/jcs",
+      ["@ix/adapters"],
+    ),
+    "layer",
+  );
+
+  cases += 1;
+  const illegalPolicy = structuredClone(policy);
+  illegalPolicy.packages["@ix/jcs"].dependsOn = ["@ix/node"];
+  const policyViolations = validatePolicy(illegalPolicy);
+  assertReason(failures, "policy rejects core to app", policyViolations, "layer");
+
+  cases += 1;
+  assertClean(
+    failures,
+    "adapter may import config",
+    sourceCase(
+      "/virtual/packages/adapters/src/index.ts",
+      'import { isNodeMode } from "@ix/config";\nexport const ok = isNodeMode("open");\n',
+      "@ix/adapters",
+      ["@ix/config"],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "app cannot import app",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      'import "@ix/ledger";\nexport const status = "stub" as const;\n',
+      "@ix/node",
+      ["@ix/ledger"],
+    ),
+    "layer",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "suite cannot import adapter",
+    sourceCase(
+      "/virtual/packages/conformance/src/index.ts",
+      'import "@ix/adapters";\nexport const status = "stub" as const;\n',
+      "@ix/conformance",
+      ["@ix/adapters"],
+    ),
+    "layer",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "crypto import is banned",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      'import { createHash } from "node:crypto";\nexport const hash = createHash;\n',
+      "@ix/node",
+      [],
+    ),
+    "banned-module",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "JSON.stringify outside jcs",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      'export const encoded = JSON.stringify({ b: 1, a: 2 });\n',
+      "@ix/node",
+      [],
+    ),
+    "json-stringify",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "JSON.stringify inside jcs src",
+    sourceCase(
+      "/virtual/packages/jcs/src/index.ts",
+      'export const encoded = JSON.stringify({ b: 1, a: 2 });\n',
+      "@ix/jcs",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "JSON.stringify in jcs tests",
+    sourceCase(
+      "/virtual/packages/jcs/test/canonicalize.test.ts",
+      'import { expect, it } from "vitest";\nit("no", () => { expect(JSON.stringify(1)).toBe("1"); });\n',
+      "@ix/jcs",
+      [],
+    ),
+    "json-stringify",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "comment is rejected",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      'export const mode = "open";\n// hidden rule\n',
+      "@ix/config",
+      [],
+    ),
+    "comment",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "url and comment-like string are allowed",
+    sourceCase(
+      "/virtual/packages/config/src/index.ts",
+      'export const spec = "https://w3id.org/a2a-job";\nexport const note = "not // a comment";\n',
+      "@ix/config",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "while true is rejected",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      "export function spin(): void {\n  while (true) {\n    break;\n  }\n}\n",
+      "@ix/node",
+      [],
+    ),
+    "unbounded-loop",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "for(;;) is rejected",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      "export function spin(): void {\n  for (;;) {\n    break;\n  }\n}\n",
+      "@ix/node",
+      [],
+    ),
+    "unbounded-loop",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "relative import cannot escape the package",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      'import { mode } from "../../config/src/index";\nexport const value = mode;\n',
+      "@ix/node",
+      [],
+    ),
+    "escaped-relative-import",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "test may import its own src",
+    sourceCase(
+      "/virtual/packages/node/test/node.test.ts",
+      'import { describe, expect, it } from "vitest";\nimport { nodeStatus } from "../src/index.js";\ndescribe("node", () => { it("stub", () => { expect(nodeStatus).toBe("stub"); }); });\n',
+      "@ix/node",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "empty catch is rejected",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      'export function hide(): void {\n  try {\n    throw new Error("x");\n  } catch {\n  }\n}\n',
+      "@ix/node",
+      [],
+    ),
+    "swallowed-error",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "empty catch callback is rejected",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      "export function hide(task: Promise<unknown>): void {\n  task.catch(() => {});\n}\n",
+      "@ix/node",
+      [],
+    ),
+    "swallowed-error",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "second canonicalize is rejected",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      "export function canonicalize(value: unknown): string {\n  return typeof value;\n}\n",
+      "@ix/node",
+      [],
+    ),
+    "canonicalize-defined",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "jcs may define canonicalize",
+    sourceCase(
+      "/virtual/packages/jcs/src/index.ts",
+      "export function canonicalize(value: unknown): string {\n  return typeof value;\n}\n",
+      "@ix/jcs",
+      [],
+    ),
+  );
+
+  cases += 1;
+  const marker = `-----BEGIN ${"PRIVATE KEY"}-----`;
+  assertReason(
+    failures,
+    "private key block is rejected",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      `export const leaked = ${JSON.stringify(marker)};\n`,
+      "@ix/node",
+      [],
+    ),
+    "private-key",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "undeclared workspace import is rejected",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      'import { recordKinds } from "@ix/log";\nexport const kinds = recordKinds;\n',
+      "@ix/node",
+      [],
+    ),
+    "undeclared",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "node builtin in src is rejected",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      'import fs from "node:fs";\nexport const read = fs.readFileSync;\n',
+      "@ix/node",
+      [],
+    ),
+    "external-import",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "word signature is not a key",
+    sourceCase(
+      "/virtual/packages/node/src/index.ts",
+      'export const topic = "signature";\n',
+      "@ix/node",
+      [],
+    ),
+  );
+
+  cases += 1;
+  const manifestViolations = evaluatePackageManifest(
+    "@ix/node",
+    {
+      dependencies: {
+        "@ix/config": "workspace:*",
+        jose: "^5.0.0",
+      },
+    },
+    policy,
+  );
+  assertReason(failures, "manifest crypto dependency is banned", manifestViolations, "banned-module");
+
+  return { ok: failures.length === 0, failures, cases };
+}

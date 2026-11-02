@@ -1,0 +1,16 @@
+{
+  "name": "@ix/a2a-ext-negotiation",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ix/a2a-ext-approval": "workspace:*",
+    "@ix/a2a-ext-mandate": "workspace:*",
+    "@ix/a2a-ext-transcript": "workspace:*",
+    "@ix/protocol-core": "workspace:*"
+  }
+}

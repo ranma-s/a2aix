@@ -1,0 +1,27 @@
+{
+  "name": "ix",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@10.33.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "boundaries": "node scripts/check-boundaries.mjs",
+    "test": "vitest run",
+    "conformance": "vitest run --config vitest.conformance.config.ts",
+    "check": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm test && pnpm conformance",
+    "verify": "node scripts/verify-ix-node.mjs drive"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
+  }
+}

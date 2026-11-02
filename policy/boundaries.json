@@ -1,0 +1,79 @@
+{
+  "packages": {
+    "@ix/jcs": {
+      "dir": "packages/jcs",
+      "layer": "core",
+      "dependsOn": []
+    },
+    "@ix/config": {
+      "dir": "packages/config",
+      "layer": "core",
+      "dependsOn": []
+    },
+    "@ix/identity": {
+      "dir": "packages/identity",
+      "layer": "core",
+      "dependsOn": []
+    },
+    "@ix/protocol-core": {
+      "dir": "packages/protocol-core",
+      "layer": "core",
+      "dependsOn": []
+    },
+    "@ix/log": {
+      "dir": "packages/log",
+      "layer": "core",
+      "dependsOn": []
+    },
+    "@ix/a2a-ext-mandate": {
+      "dir": "packages/a2a-ext-mandate",
+      "layer": "core",
+      "dependsOn": ["@ix/protocol-core"]
+    },
+    "@ix/a2a-ext-approval": {
+      "dir": "packages/a2a-ext-approval",
+      "layer": "core",
+      "dependsOn": ["@ix/protocol-core"]
+    },
+    "@ix/a2a-ext-transcript": {
+      "dir": "packages/a2a-ext-transcript",
+      "layer": "core",
+      "dependsOn": ["@ix/protocol-core"]
+    },
+    "@ix/a2a-ext-negotiation": {
+      "dir": "packages/a2a-ext-negotiation",
+      "layer": "core",
+      "dependsOn": [
+        "@ix/protocol-core",
+        "@ix/a2a-ext-mandate",
+        "@ix/a2a-ext-approval",
+        "@ix/a2a-ext-transcript"
+      ]
+    },
+    "@ix/node": {
+      "dir": "packages/node",
+      "layer": "app",
+      "dependsOn": ["@ix/config"]
+    },
+    "@ix/ledger": {
+      "dir": "packages/ledger",
+      "layer": "app",
+      "dependsOn": ["@ix/log"]
+    },
+    "@ix/approval-app": {
+      "dir": "packages/approval-app",
+      "layer": "app",
+      "dependsOn": ["@ix/identity"]
+    },
+    "@ix/conformance": {
+      "dir": "packages/conformance",
+      "layer": "suite",
+      "dependsOn": ["@ix/protocol-core"]
+    },
+    "@ix/adapters": {
+      "dir": "packages/adapters",
+      "layer": "adapter",
+      "dependsOn": ["@ix/config"]
+    }
+  }
+}

@@ -1,0 +1,2 @@
+date	id	decision	reason
+2026-11-02	T01	Foundation only: pnpm workspace, core/app/adapter/suite packages, JCS reserved at @ix/jcs, no crypto and no signing	Protocol behavior, signatures, and key handling wait for later tickets and a human security reviewer
