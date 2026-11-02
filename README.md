@@ -24,16 +24,16 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 
 - pnpm の TypeScript モノレポ。コア、アプリ、アダプタ、適合スイートをパッケージに分けてあります。
 - 依存の向きを CI で検査します。コアからアダプタへは戻れません。
-- JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。中身は未実装で、呼ぶと失敗します。テストベクトルは TODO です。
-- 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。
+- JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。JSON でない値は拒否します。正規化バイトの SHA-256（小文字の16進）は `@ix/protocol-core` の `hashCanonicalBody` です。`signature` は消しません。署名そのものはまだありません。
+- 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。JCS とハッシュ方式の変更も、その人の確認が要ります。
 - 適合テスト6項目の置き場所はあります。結果はすべて未実施（`pending`）です。
 
 This revision is the foundation. Protocol behavior is not implemented.
 
 - A pnpm TypeScript monorepo split into core, app, adapter, and conformance packages.
 - CI rejects a dependency that points the wrong way. Core cannot import adapters.
-- JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. It throws. Test vectors are TODO.
-- Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them.
+- JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. Values that are not JSON are rejected. `hashCanonicalBody` in `@ix/protocol-core` is SHA-256 of those UTF-8 bytes, lowercase hex. It does not remove `signature`. Signing is still absent.
+- Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them. Changes to JCS or the hash also wait for that reviewer.
 - The six conformance items have a home. Every result is `pending`.
 
 役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。
@@ -76,10 +76,10 @@ node scripts/verify-ix-node.mjs cleanup
 ## レイアウト / Layout
 
 ```
-packages/jcs                  JCS の置き場所（未実装）
+packages/jcs                  JCS（RFC 8785）。正規化はここだけ
 packages/config               open / closed
 packages/identity             鍵操作の拒否。鍵そのものは無い
-packages/protocol-core        拡張 URI 4つ
+packages/protocol-core        拡張 URI 4つと、正規化バイトの SHA-256
 packages/log                   透明性ログのスタブ
 packages/a2a-ext-*             交渉・委任範囲・承認・履歴のスタブ
 packages/node                  ノードのスタブ。ポートは開かない
@@ -88,7 +88,7 @@ packages/approval-app          承認アプリのスタブ。署名しない
 packages/adapters              アダプタ。他から依存されない
 packages/conformance           適合テストの仮実装
 deploy/                        設定例だけ
-vectors/                       固定ベクトルの置き場所。中身はまだ無い
+vectors/                       固定ベクトルの説明。実体はパッケージのテスト。鍵は無い
 docs/spec/                     仕様（CC BY 4.0）
 docs/team.md                   チーム
 .cursor/skills/verify-ix-node/ 検証手順のスタブ

@@ -8,3 +8,10 @@ export const extensionUris = {
 } as const;
 
 export type ExtensionName = keyof typeof extensionUris;
+
+export { CanonicalHashError } from "./hash-error.js";
+export {
+  canonicalBodyHash,
+  hashCanonicalBody,
+  verifyCanonicalBodyHash,
+} from "./hash.js";

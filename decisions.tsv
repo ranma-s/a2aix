@@ -1,2 +1,3 @@
 date	id	decision	reason
 2026-11-02	T01	Foundation only: pnpm workspace, core/app/adapter/suite packages, JCS reserved at @ix/jcs, no crypto and no signing	Protocol behavior, signatures, and key handling wait for later tickets and a human security reviewer
+2026-11-02	T03	Canonical bytes are RFC 8785 from @ix/jcs. The prevHash digest is SHA-256 of that UTF-8, lowercase hex, from hashCanonicalBody. It does not remove signature, parse JSON text, or Unicode-normalize. Non-JSON values are rejected. Nesting stops at 64 containers. No JWS and no keys.	The spec requires one hash and does not name an encoding. Hex stands until a security reviewer replaces it. Duplicate keys are invisible on a JavaScript object, so this change does not reject them. Green CI is not acceptance.

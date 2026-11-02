@@ -29,6 +29,28 @@ const bannedExact = new Set([
 
 const bannedPrefixes = ["@noble/", "@stablelib/", "@transmute/"];
 
+const bannedSigningNames = new Set([
+  "sign",
+  "generateKey",
+  "generateKeyPair",
+  "generateKeyPairSync",
+  "importKey",
+  "exportKey",
+  "deriveKey",
+  "deriveBits",
+  "wrapKey",
+  "unwrapKey",
+  "createSign",
+  "createVerify",
+  "createPrivateKey",
+  "createPublicKey",
+  "createSecretKey",
+  "privateEncrypt",
+  "privateDecrypt",
+  "publicEncrypt",
+  "publicDecrypt",
+]);
+
 const pemLabels = [
   "PRIVATE KEY",
   "RSA PRIVATE KEY",
@@ -75,6 +97,24 @@ function normalize(fileName) {
 
 export function isJcsImplementation(fileName) {
   return normalize(fileName).includes("/packages/jcs/src/");
+}
+
+export function isProtocolHashSource(fileName) {
+  return normalize(fileName).includes("/packages/protocol-core/src/");
+}
+
+function propertyName(node) {
+  if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
+    return node.name.text;
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    node.argumentExpression !== undefined &&
+    ts.isStringLiteral(node.argumentExpression)
+  ) {
+    return node.argumentExpression.text;
+  }
+  return undefined;
 }
 
 export function isTestFile(fileName) {
@@ -271,6 +311,39 @@ export function evaluateSource(input) {
           "json-stringify",
           `${normalize(input.fileName)}:${String(lineOf(source, node))}: JSON.stringify cannot canonicalize. Use canonicalize from @ix/jcs.`,
         );
+      }
+    }
+    const accessed = propertyName(node);
+    if (accessed !== undefined && bannedSigningNames.has(accessed)) {
+      add(
+        violations,
+        "signing-api",
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}: ".${accessed}" is a signing or key operation. Those stay refused.`,
+      );
+    }
+    if (ts.isCallExpression(node)) {
+      const called = propertyName(unwrap(node.expression));
+      if (called === "digest") {
+        const location = `${normalize(input.fileName)}:${String(lineOf(source, node))}`;
+        if (!isProtocolHashSource(input.fileName)) {
+          add(
+            violations,
+            "digest-site",
+            `${location}: SHA-256 digest is only allowed in packages/protocol-core/src.`,
+          );
+        }
+        const algorithm = node.arguments[0];
+        if (
+          algorithm === undefined ||
+          !ts.isStringLiteral(algorithm) ||
+          algorithm.text !== "SHA-256"
+        ) {
+          add(
+            violations,
+            "digest-algorithm",
+            `${location}: digest algorithm must be the string literal "SHA-256".`,
+          );
+        }
       }
     }
     if (
@@ -643,6 +716,11 @@ function fixturePolicy() {
   return {
     packages: {
       "@ix/jcs": { dir: "packages/jcs", layer: "core", dependsOn: [] },
+      "@ix/protocol-core": {
+        dir: "packages/protocol-core",
+        layer: "core",
+        dependsOn: ["@ix/jcs"],
+      },
       "@ix/config": { dir: "packages/config", layer: "core", dependsOn: [] },
       "@ix/log": { dir: "packages/log", layer: "core", dependsOn: [] },
       "@ix/node": { dir: "packages/node", layer: "app", dependsOn: ["@ix/config"] },
@@ -907,6 +985,83 @@ export function runSelfTest() {
       [],
     ),
     "canonicalize-defined",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "protocol-core may digest SHA-256",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'export const digest = crypto.subtle.digest("SHA-256", new Uint8Array());\n',
+      "@ix/protocol-core",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "SHA-1 digest is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'export const digest = crypto.subtle.digest("SHA-1", new Uint8Array());\n',
+      "@ix/protocol-core",
+      [],
+    ),
+    "digest-algorithm",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "digest outside protocol-core is rejected",
+    sourceCase(
+      "/virtual/packages/jcs/src/index.ts",
+      'export const digest = crypto.subtle.digest("SHA-256", new Uint8Array());\n',
+      "@ix/jcs",
+      [],
+    ),
+    "digest-site",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "digest in a test is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/test/hash.test.ts",
+      'import { expect, it } from "vitest";\nit("no", () => { crypto.subtle.digest("SHA-256", new Uint8Array()); });\n',
+      "@ix/protocol-core",
+      [],
+    ),
+    "digest-site",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "subtle.sign is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'export const signed = crypto.subtle.sign("x", new Uint8Array());\n',
+      "@ix/protocol-core",
+      [],
+    ),
+    "signing-api",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "string-keyed exportKey is rejected",
+    sourceCase(
+      "/virtual/packages/identity/src/index.ts",
+      'export const exported = crypto.subtle["exportKey"]("raw");\n',
+      "@ix/config",
+      [],
+    ),
+    "signing-api",
   );
 
   cases += 1;
