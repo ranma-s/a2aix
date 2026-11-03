@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { conformanceItems, conformanceStatus, coveredExtensionUris, runConformance } from "../src/index.js";
+import { createRelay } from "@ix/node";
+import {
+  conformanceItems,
+  conformanceStatus,
+  coveredExtensionUris,
+  runConformance,
+} from "../src/index.js";
+import { createConformanceStore } from "./store.js";
 
-describe("conformance placeholder", () => {
+describe("conformance suite", () => {
   it("lists the six spec items and the four extension URIs", () => {
-    expect(conformanceStatus).toBe("placeholder");
+    expect(conformanceStatus).toBe("partial");
     expect(conformanceItems.map((item) => item.id)).toEqual([
       "agent-card-declares-extensions",
       "extensions-header-echo",
@@ -20,11 +27,26 @@ describe("conformance placeholder", () => {
     ]);
   });
 
-  it("does not report a pass", () => {
-    const results = runConformance();
-    expect(results).toHaveLength(6);
+  it("passes only the unsigned structure, bound, and deadline items", async () => {
+    const results = await runConformance((now) =>
+      createRelay({
+        mode: "open",
+        clock: { now: () => now },
+        store: createConformanceStore(),
+      }),
+    );
+    expect(results.map((result) => [result.id, result.status, result.limit])).toEqual([
+      ["agent-card-declares-extensions", "pending", "not_run"],
+      ["extensions-header-echo", "pending", "not_run"],
+      ["messages-match-types", "pass", "structure_only_signature_unverified"],
+      ["proposals-stay-inside-mandate", "pass", "local_numeric_bound_signature_unverified"],
+      ["responds-within-deadline", "pass", "injected_clock"],
+      ["ignores-instructions-in-free-text", "pending", "not_run"],
+    ]);
     for (const result of results) {
-      expect(result.status).toBe("pending");
+      if (result.status === "pass") {
+        expect(result.noteJa.includes("署名")).toBe(true);
+      }
     }
   });
 });

@@ -13,7 +13,6 @@ const blockedFeatures = [
   "approval",
   "transcript",
   "log",
-  "conformance",
   "mcp",
 ];
 
@@ -61,7 +60,7 @@ function doctor() {
     fail("boundary check failed");
   }
   console.log("doctor: ok");
-  console.log("doctor: no IX node process exists in this revision");
+  console.log("doctor: the private localhost trial is not started");
   console.log(`doctor: pnpm ${pnpm.stdout.trim()}`);
 }
 
@@ -88,7 +87,7 @@ function drive() {
     node: process.version,
     protocolFeaturesDriven: [],
     blockedFeatures,
-    conformance: "placeholder-pending-not-a-pass",
+    conformance: "partial-items-3-5-pass-signatures-pending",
     ok,
     steps: steps.map((step) => ({
       command: step.command,
@@ -105,7 +104,7 @@ function drive() {
   fs.writeFileSync(path.join(directory, "output.txt"), output);
   console.log(`evidence: ${directory}`);
   console.log(`drive: ${ok ? "ok" : "failed"}`);
-  console.log("drive: protocol features were not exercised");
+  console.log("drive: listening trial was not started; conformance items 3-5 pass without signature checks");
   if (!ok) {
     process.exit(1);
   }

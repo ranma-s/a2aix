@@ -1,6 +1,6 @@
 # Conformance
 
-公開の適合テスト6項目。誰でも実行でき、結果は資格情報として示せる。未実装。仮の一覧だけがある。
+公開の適合テスト6項目。誰でも実行でき、結果は資格情報として示せる。いま合格にしているのは、署名を見ない3項目だけです。
 
 ## Sub-features
 
@@ -13,16 +13,25 @@
 
 ## How to get to it (user POV)
 
-An operator runs the public suite against their own agent and shows the result. The counterparty decides whether to believe it. There is no registrar. There is no suite to run against an agent yet.
+An operator runs the public suite against their own agent and shows the result. The counterparty decides whether to believe it. There is no registrar. `pnpm conformance` runs the suite against the mock poster and worker through `createRelay`.
 
 ## Driving it with verify-ix-node
 
-Placeholder. `pnpm conformance` runs `@ix/conformance` and expects six results, each `status: "pending"`. Drive records `conformance: "placeholder-pending-not-a-pass"`.
+`pnpm conformance` expects this split:
 
-A green conformance job means the placeholder still refuses to claim a pass. It does not mean an agent conforms.
+| id | status | limit |
+| --- | --- | --- |
+| `agent-card-declares-extensions` | `pending` | `not_run` |
+| `extensions-header-echo` | `pending` | `not_run` |
+| `messages-match-types` | `pass` | `structure_only_signature_unverified` |
+| `proposals-stay-inside-mandate` | `pass` | `local_numeric_bound_signature_unverified` |
+| `responds-within-deadline` | `pass` | `injected_clock` |
+| `ignores-instructions-in-free-text` | `pending` | `not_run` |
+
+Drive records `conformance: "partial-items-3-5-pass-signatures-pending"`. A green job is that split. It is not a six-item credential and it does not check a signature. Drive does not start `deploy/local/compose.yaml`.
 
 ## Gotchas
 
-- Do not flip an item to pass to keep CI green. Change the item only when a real suite produces that result, and show the command in the evidence.
+- Do not flip item 1, 2, or 6 to pass in the change that writes the suite. A separate verifier has to accept any further flip. Do not delete the limit on a pass.
 - Passing the suite is not a promise about later operations. The spec says so.
 - Which result to trust is the counterparty agent's decision. Do not add a central allow-list.

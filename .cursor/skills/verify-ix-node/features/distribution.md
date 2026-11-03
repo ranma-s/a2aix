@@ -13,7 +13,7 @@
 
 ## How to get to it (user POV)
 
-An operator runs their own node and chooses a mode. The examples are `deploy/node/config.open.example.json` and `deploy/node/config.closed.example.json`. There is no node command and no relay URL. The plain-language map is `docs/distribution.md`.
+An operator runs their own node and chooses a mode. The examples are `deploy/node/config.open.example.json` and `deploy/node/config.closed.example.json`. The plain-language map is `docs/distribution.md`. A private listener exists at `scripts/local-ix.mjs` and `deploy/local/compose.yaml`. It binds `127.0.0.1` and publishes no port. It is not a public relay URL.
 
 ## Driving it with verify-ix-node
 
@@ -23,7 +23,7 @@ The `@ix/node` unit test still checks `describeNode("open").acceptsPublicPublish
 
 ## Gotchas
 
-- Do not start a server, websocket, or container to make this file look drivable.
+- Do not start the private compose file, a websocket, or a container to make this file look drivable. Drive must not launch `scripts/local-ix.mjs`.
 - Do not sign an event. Signatures need a human security reviewer. PR #3 (JCS) is still unmerged.
 - Do not compute an event id. `@ix/jcs` `canonicalize` throws. `JSON.stringify` is not a stand-in. The caller supplies `id`.
 - Unknown kinds and tags are stored. Do not reject them in the relay.

@@ -59,11 +59,11 @@ jobs:
       - run: pnpm test
 
   conformance:
-    name: conformance placeholder
+    name: conformance
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - name: Run the six-item placeholder (every item must stay pending)
+      - name: Run the six-item suite
         run: pnpm conformance
