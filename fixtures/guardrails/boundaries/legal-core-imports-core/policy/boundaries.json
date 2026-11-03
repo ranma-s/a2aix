@@ -1,0 +1,14 @@
+{
+  "packages": {
+    "@ix/base": {
+      "dir": "packages/base",
+      "layer": "core",
+      "dependsOn": []
+    },
+    "@ix/user": {
+      "dir": "packages/user",
+      "layer": "core",
+      "dependsOn": ["@ix/base"]
+    }
+  }
+}

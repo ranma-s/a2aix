@@ -1,13 +1,17 @@
 import eslint from "@eslint/js";
-import tseslint from "typescript-eslint";
 import globals from "globals";
+import tseslint from "typescript-eslint";
+import { ixPlugin, sourceCommentBanFiles, typeGuardRules } from "./scripts/type-guard-rules.mjs";
+
+const typeFiles = sourceCommentBanFiles.filter((pattern) => pattern.endsWith(".ts"));
+const scriptFiles = sourceCommentBanFiles.filter((pattern) => !pattern.endsWith(".ts"));
 
 export default tseslint.config(
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "artifacts/**", "pnpm-lock.yaml"],
+    ignores: ["**/node_modules/**", "**/dist/**", "artifacts/**", "pnpm-lock.yaml", "fixtures/**"],
   },
   {
-    files: ["scripts/**/*.mjs"],
+    files: scriptFiles,
     extends: [eslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,
@@ -16,9 +20,15 @@ export default tseslint.config(
         ...globals.node,
       },
     },
+    plugins: {
+      ix: ixPlugin,
+    },
+    rules: {
+      "ix/no-code-comments": "error",
+    },
   },
   {
-    files: ["packages/**/*.ts", "vitest.config.ts", "vitest.conformance.config.ts"],
+    files: typeFiles,
     extends: [eslint.configs.recommended, ...tseslint.configs.strictTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -26,25 +36,14 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
+    plugins: {
+      ix: ixPlugin,
+    },
     rules: {
-      "@typescript-eslint/consistent-type-assertions": [
-        "error",
-        { assertionStyle: "never" },
-      ],
+      ...typeGuardRules,
       "@typescript-eslint/consistent-type-imports": [
         "error",
         { prefer: "type-imports", fixStyle: "separate-type-imports" },
-      ],
-      "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-non-null-assertion": "error",
-      "@typescript-eslint/ban-ts-comment": [
-        "error",
-        {
-          "ts-expect-error": true,
-          "ts-ignore": true,
-          "ts-nocheck": true,
-          "ts-check": true,
-        },
       ],
       "no-empty": ["error", { allowEmptyCatch: false }],
       "no-restricted-syntax": [

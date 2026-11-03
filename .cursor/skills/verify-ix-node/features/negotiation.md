@@ -1,13 +1,14 @@
 # Negotiation
 
-交渉。Proposal、CounterProposal、AgreementDraft。未実装。
+交渉。Proposal、CounterProposal、AgreementDraft。段階機械は `@ix/a2a-ext-negotiation`。模試の発注側と受注側が、`127.0.0.1` の中継の掲載と検索でこの機械を進める。署名は見ない。
 
 ## Sub-features
 
-- A worker agent sends a Proposal to the client agent's endpoint on the job post.
+- A mock worker publishes a Proposal on the injected relay. The client mock reads it back with query. This is not an A2A HTTP endpoint.
 - Either agent sends a CounterProposal: `counter`, `accept`, or `decline`.
-- The client agent builds an AgreementDraft. The worker agent recomputes it.
+- The client agent builds an AgreementDraft. The worker agent recomputes it in the spec. This revision stores the draft it is given and does not recompute a hash.
 - Phase lives in metadata, not in a new Task state.
+- `apply` in `@ix/a2a-ext-negotiation` is the phase machine. It does not sign, hash, or check a mandate. Signature material stays `deferred`.
 
 ## How to get to it (user POV)
 
@@ -15,12 +16,15 @@ After a job post is found, the worker's agent contacts the client agent directly
 
 ## Driving it with verify-ix-node
 
-Blocked. Drive does not send a message. `@ix/a2a-ext-negotiation` only exports its URI and the three extension URIs it requires.
+Drive starts the localhost relay and both mocks. Both must print `agreed`. That path is `negotiation-mock` in the evidence. It is not an A2A HTTP endpoint, and it does not verify a signature. `@ix/verify` then replays the same messages through the phase machine without hashing them.
 
 ## Gotchas
 
 - Phase values are `negotiating`, `awaiting_approval`, `agreed`, and `no_deal`. The metadata key is `https://w3id.org/a2a-job/ext/negotiation/v1/phase`. Do not add a Task state enum value.
 - `no_deal` uses `TASK_STATE_REJECTED` when the client agent refuses, and `TASK_STATE_CANCELED` when the worker withdraws, the deadline passes, or the round limit is hit. The reason is metadata, not a new state.
+- The opening proposal is round 1. A client counter stays in the current round. A worker counter opens the next round unless `roundOpen` is set, which means a human return already opened it. The worker counter that would open `maxRoundTrips + 1` is `no_deal` / `round_limit` / `TASK_STATE_CANCELED`. Human `reject` or `revise` when `round < maxRoundTrips` returns to `negotiating` and consumes the next round. At the cap it is `no_deal` / `round_limit`.
+- The clock is an argument. `now >= expiresAt` is `no_deal` / `expired` / `TASK_STATE_CANCELED`, and it wins over a round-limit counter.
+- `agreed` happens only on the second human `approve`. One approval stays in `awaiting_approval`. An agent `accept` plus `AgreementDraft` is not agreement.
 - `contextId` is the `jobId`.
 - A free-text `note` is not an instruction to the other agent.
 - Negotiation requires the mandate, approval, and transcript extensions. Do not implement it without those URIs.

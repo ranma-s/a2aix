@@ -1,0 +1,8 @@
+{
+  "name": "@ix/user",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ix/base": "workspace:*"
+  }
+}

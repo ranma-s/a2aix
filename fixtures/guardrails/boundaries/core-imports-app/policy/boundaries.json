@@ -1,0 +1,14 @@
+{
+  "packages": {
+    "@ix/core-pkg": {
+      "dir": "packages/core-pkg",
+      "layer": "core",
+      "dependsOn": ["@ix/app-pkg"]
+    },
+    "@ix/app-pkg": {
+      "dir": "packages/app-pkg",
+      "layer": "app",
+      "dependsOn": []
+    }
+  }
+}

@@ -8,6 +8,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@ix/protocol-core": "workspace:*"
+    "@ix/agents": "workspace:*",
+    "@ix/approval-app": "workspace:*",
+    "@ix/distribution": "workspace:*",
+    "@ix/node": "workspace:*",
+    "@ix/protocol-core": "workspace:*",
+    "@ix/verify": "workspace:*"
   }
 }

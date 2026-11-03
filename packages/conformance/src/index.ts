@@ -1,6 +1,10 @@
 import { extensionUris } from "@ix/protocol-core";
+import type { JobBoard } from "@ix/agents";
+import { injectionCases } from "@ix/agents";
+import { proveDeadline, proveMandate, proveMessages } from "./run.js";
+import { runInjectionSuite } from "./injection.js";
 
-export const conformanceStatus = "placeholder" as const;
+export const conformanceStatus = "partial" as const;
 
 export const coveredExtensionUris = [
   extensionUris.negotiation,
@@ -44,21 +48,153 @@ export const conformanceItems = [
 
 export type ConformanceItemId = (typeof conformanceItems)[number]["id"];
 
+export type ConformanceLimit =
+  | "not_run"
+  | "structure_only_signature_unverified"
+  | "local_numeric_bound_signature_unverified"
+  | "injected_clock"
+  | "free_text_ignored_signature_unverified";
+
 export type ConformanceResult = {
   readonly id: ConformanceItemId;
   readonly titleEn: string;
   readonly titleJa: string;
-  readonly status: "pending";
+  readonly status: "pending" | "pass";
+  readonly limit: ConformanceLimit;
+  readonly coveredCases: readonly string[];
+  readonly noteEn: string;
+  readonly noteJa: string;
 };
 
-export function runConformance(): readonly ConformanceResult[] {
-  return conformanceItems.map((item) => {
-    const result: ConformanceResult = {
-      id: item.id,
-      titleEn: item.titleEn,
-      titleJa: item.titleJa,
-      status: "pending",
-    };
-    return result;
-  });
+export { runInjectionSuite } from "./injection.js";
+export type { InjectionObservation, InjectionSuiteResult } from "./injection.js";
+
+export async function runConformance(
+  openBoard: (now: string) => JobBoard,
+): Promise<readonly ConformanceResult[]> {
+  const messages = await proveMessages(openBoard);
+  const mandate = await proveMandate(openBoard);
+  await proveDeadline(openBoard);
+  const injection = await runInjectionSuite(openBoard);
+  if (
+    messages.fuzzRejected < 13 ||
+    !messages.handAccepted ||
+    !messages.sawJobFields ||
+    !messages.sawLinkedDraft ||
+    !mandate.exactCap ||
+    !mandate.exactFloor ||
+    !mandate.oneAboveCap ||
+    !mandate.oneBelowFloor ||
+    !mandate.posterBlocked250000 ||
+    !mandate.workerBlocked1 ||
+    !mandate.laterRoundBlocked ||
+    !sameCases(injection.observations.map((item) => item.id)) ||
+    injection.verify.schema !== "pass" ||
+    injection.verify.replay !== "pass" ||
+    injection.verify.bounds !== "pass" ||
+    injection.verify.deadlines !== "pass" ||
+    injection.verify.phase !== "agreed"
+  ) {
+    throw new Error("conformance evidence does not support the recorded passes");
+  }
+  return conformanceItems.map((item) => describe(item));
+}
+
+function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
+  switch (item.id) {
+    case "agent-card-declares-extensions":
+      return pending(
+        item,
+        "The declaration helper exists, but the spec card includes a JWS signature. This item stays pending until that signature can be checked.",
+        "拡張を並べる関数はあります。仕様の Agent Card には JWS の署名が含まれるため、署名を確認できるまでこの項目は未実施です。",
+      );
+    case "extensions-header-echo":
+      return pending(
+        item,
+        "Header intersection is already unit-tested. This item stays pending so a pass is not read as a completed A2A HTTP echo.",
+        "ヘッダーの突き合わせはユニットテスト済みです。A2A の HTTP 応答そのものの合格と読まれないよう、この項目は未実施のままです。",
+      );
+    case "messages-match-types":
+      return pass(
+        item,
+        "structure_only_signature_unverified",
+        "Dates are RFC 3339, money is integer JPY, and a job post includes the card address, both budget ends, and required skills. The agreement placeholder contains the amount and is not a hash. Signatures are not checked.",
+        "日付は RFC 3339、金額は円の整数、依頼票にはカードの住所と予算の下限と上限と必要なスキルがあります。合意のつなぎ文字には金額を含めますが、ハッシュではありません。署名は見ていません。",
+      );
+    case "proposals-stay-inside-mandate":
+      return pass(
+        item,
+        "local_numeric_bound_signature_unverified",
+        "The mock re-checks its private numeric bound on the opening offer, on an exact edge, on a later round, and before approval. A different amount is not the same agreement. The mandate extension stays a stub. No mandate signature is checked.",
+        "模試は、最初の提案だけでなく、ちょうど上限と下限、次の往復、合意案、承認の前にも、自分の数値の範囲を見ます。金額が違えば、同じ合意としては受けません。委任の拡張はスタブのままです。委任状の署名は見ていません。",
+      );
+    case "responds-within-deadline":
+      return pass(
+        item,
+        "injected_clock",
+        "With an injected clock, the mock sends no negotiation message at the deadline and does send one before it. Signatures are not checked.",
+        "渡した時計で、期限ちょうどには交渉のメッセージを出さず、期限前には出します。署名は見ていません。",
+      );
+    case "ignores-instructions-in-free-text":
+      return pass(
+        item,
+        "free_text_ignored_signature_unverified",
+        `Executed against the mock agents and the relay: ${caseList()}. Structured fields stayed in force. Signatures, JCS, JWS, and prevHash are not checked.`,
+        `模試と中継に対して実行した試験: ${caseList()}。型の項目はそのままです。署名は見ていません。`,
+        injectionCases.map((entry) => entry.id),
+      );
+  }
+}
+
+function pending(
+  item: (typeof conformanceItems)[number],
+  noteEn: string,
+  noteJa: string,
+): ConformanceResult {
+  return {
+    id: item.id,
+    titleEn: item.titleEn,
+    titleJa: item.titleJa,
+    status: "pending",
+    limit: "not_run",
+    coveredCases: [],
+    noteEn,
+    noteJa,
+  };
+}
+
+function pass(
+  item: (typeof conformanceItems)[number],
+  limit: Exclude<ConformanceLimit, "not_run">,
+  noteEn: string,
+  noteJa: string,
+  coveredCases: readonly string[] = [],
+): ConformanceResult {
+  return {
+    id: item.id,
+    titleEn: item.titleEn,
+    titleJa: item.titleJa,
+    status: "pass",
+    limit,
+    coveredCases,
+    noteEn,
+    noteJa,
+  };
+}
+
+function caseList(): string {
+  return injectionCases.map((entry) => entry.id).join(", ");
+}
+
+function sameCases(ids: readonly string[]): boolean {
+  if (ids.length !== injectionCases.length) {
+    return false;
+  }
+  for (let index = 0; index < injectionCases.length; index += 1) {
+    const expected = injectionCases[index];
+    if (expected === undefined || ids[index] !== expected.id) {
+      return false;
+    }
+  }
+  return true;
 }

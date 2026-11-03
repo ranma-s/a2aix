@@ -20,6 +20,11 @@
       "layer": "core",
       "dependsOn": ["@ix/jcs"]
     },
+    "@ix/distribution": {
+      "dir": "packages/distribution",
+      "layer": "core",
+      "dependsOn": []
+    },
     "@ix/log": {
       "dir": "packages/log",
       "layer": "core",
@@ -53,7 +58,21 @@
     "@ix/node": {
       "dir": "packages/node",
       "layer": "app",
-      "dependsOn": ["@ix/config"]
+      "dependsOn": ["@ix/config", "@ix/distribution"]
+    },
+    "@ix/agents": {
+      "dir": "packages/agents",
+      "layer": "app",
+      "dependsOn": [
+        "@ix/a2a-ext-negotiation",
+        "@ix/distribution",
+        "@ix/protocol-core"
+      ]
+    },
+    "@ix/verify": {
+      "dir": "packages/verify",
+      "layer": "core",
+      "dependsOn": ["@ix/a2a-ext-negotiation", "@ix/distribution"]
     },
     "@ix/ledger": {
       "dir": "packages/ledger",
@@ -68,12 +87,19 @@
     "@ix/conformance": {
       "dir": "packages/conformance",
       "layer": "suite",
-      "dependsOn": ["@ix/protocol-core"]
+      "dependsOn": [
+        "@ix/agents",
+        "@ix/approval-app",
+        "@ix/distribution",
+        "@ix/node",
+        "@ix/protocol-core",
+        "@ix/verify"
+      ]
     },
     "@ix/adapters": {
       "dir": "packages/adapters",
       "layer": "adapter",
-      "dependsOn": ["@ix/config"]
+      "dependsOn": ["@ix/agents", "@ix/config", "@ix/distribution", "@ix/node"]
     }
   }
 }

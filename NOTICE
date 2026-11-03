@@ -4,9 +4,15 @@ Copyright 2026 the IX authors
 The code in this repository is licensed under the Apache License, Version 2.0.
 See the LICENSE file.
 
-Source files do not repeat that license header. The header would be a comment,
-and package source does not allow comments. This NOTICE and LICENSE identify
-the license for the code.
+Source files usually do not repeat a license header. This NOTICE and LICENSE
+identify the license for the code.
+
+A source file may begin with one block comment whose only text is
+SPDX-License-Identifier: Apache-2.0. That is the only comment the lint and
+the boundary check allow. A longer boilerplate, a line comment, a starred
+decoration, or a note beside the identifier is rejected. Documentation
+(Markdown, the specification, this NOTICE, and LICENSE) is not source and is
+not subject to that rule.
 
 The specification text under docs/spec/ is not part of the Apache-2.0 code.
 That text is licensed under Creative Commons Attribution 4.0 International

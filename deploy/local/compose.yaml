@@ -1,0 +1,39 @@
+# Private trial. No host ports are published. The node process binds 127.0.0.1.
+name: ix-local
+
+services:
+  ix:
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile
+    command: ["node", "--import", "tsx", "scripts/local-ix.mjs", "serve"]
+    environment:
+      IX_BIND: 127.0.0.1
+      IX_PORT: "8787"
+      IX_MODE: open
+      IX_NOW: "2026-11-04T00:00:00.000Z"
+    init: true
+
+  poster:
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile
+    network_mode: "service:ix"
+    depends_on:
+      - ix
+    command: ["node", "--import", "tsx", "scripts/local-ix.mjs", "poster"]
+    environment:
+      IX_URL: http://127.0.0.1:8787
+      IX_NOW: "2026-11-04T00:00:00.000Z"
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile
+    network_mode: "service:ix"
+    depends_on:
+      - ix
+    command: ["node", "--import", "tsx", "scripts/local-ix.mjs", "worker"]
+    environment:
+      IX_URL: http://127.0.0.1:8787
+      IX_NOW: "2026-11-04T00:00:00.000Z"

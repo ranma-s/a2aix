@@ -7,14 +7,21 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const evidenceRoot = path.join(root, "artifacts", "verify");
 
 const blockedFeatures = [
-  "distribution",
-  "negotiation",
   "mandate",
   "approval",
   "transcript",
   "log",
-  "conformance",
   "mcp",
+  "signature",
+  "jcs",
+  "jws",
+  "prevHash",
+];
+
+const drivenFeatures = [
+  "distribution-localhost-publish-query",
+  "negotiation-mock",
+  "ix-verify",
 ];
 
 function fail(message) {
@@ -61,7 +68,7 @@ function doctor() {
     fail("boundary check failed");
   }
   console.log("doctor: ok");
-  console.log("doctor: no IX node process exists in this revision");
+  console.log("doctor: drive is the step that starts 127.0.0.1");
   console.log(`doctor: pnpm ${pnpm.stdout.trim()}`);
 }
 
@@ -71,9 +78,14 @@ function drive() {
     run("pnpm", ["typecheck"]),
     run("pnpm", ["lint"]),
     run("pnpm", ["boundaries"]),
+    run("pnpm", ["guardrails"]),
     run("pnpm", ["test"]),
     run("pnpm", ["conformance"]),
   ];
+  const checksOk = steps.every((step) => step.exitCode === 0);
+  if (checksOk) {
+    steps.push(run("node", ["--import", "tsx", "scripts/ix-trial-evidence.mjs"]));
+  }
   const ok = steps.every((step) => step.exitCode === 0);
   const finishedAt = new Date().toISOString();
   const stamp = startedAt.replaceAll(":", "").replaceAll(".", "");
@@ -85,9 +97,11 @@ function drive() {
     startedAt,
     finishedAt,
     node: process.version,
-    protocolFeaturesDriven: [],
+    bind: "127.0.0.1",
+    protocolFeaturesDriven: ok ? drivenFeatures : [],
     blockedFeatures,
-    conformance: "placeholder-pending-not-a-pass",
+    conformance: "partial-items-3-6-pass-signatures-deferred",
+    deferredChecks: ["signature", "jcs", "jws", "prevHash"],
     ok,
     steps: steps.map((step) => ({
       command: step.command,
@@ -104,14 +118,19 @@ function drive() {
   fs.writeFileSync(path.join(directory, "output.txt"), output);
   console.log(`evidence: ${directory}`);
   console.log(`drive: ${ok ? "ok" : "failed"}`);
-  console.log("drive: protocol features were not exercised");
+  console.log(
+    ok
+      ? "drive: localhost relay on 127.0.0.1 exercised; signatures, JCS, JWS, and prevHash stay deferred"
+      : "drive: failed",
+  );
   if (!ok) {
     process.exit(1);
   }
 }
 
 function cleanup() {
-  console.log("cleanup: no node process was started");
+  console.log("cleanup: the drive stops its own 127.0.0.1 listener before it exits");
+  console.log("cleanup: this command does not kill a process by name");
   console.log(`cleanup: evidence kept under ${evidenceRoot}`);
 }
 

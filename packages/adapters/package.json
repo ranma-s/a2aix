@@ -8,6 +8,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@ix/config": "workspace:*"
+    "@ix/agents": "workspace:*",
+    "@ix/config": "workspace:*",
+    "@ix/distribution": "workspace:*",
+    "@ix/node": "workspace:*"
   }
 }

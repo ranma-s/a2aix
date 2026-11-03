@@ -25,5 +25,6 @@
     "packages/*/test/**/*.ts",
     "vitest.config.ts",
     "vitest.conformance.config.ts"
-  ]
+  ],
+  "exclude": ["fixtures"]
 }

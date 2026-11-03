@@ -1,0 +1,14 @@
+{
+  "name": "@ix/verify",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ix/a2a-ext-negotiation": "workspace:*",
+    "@ix/distribution": "workspace:*"
+  }
+}
