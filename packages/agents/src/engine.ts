@@ -223,6 +223,12 @@ function createSide(input: SideInput): MockSide {
           jobEventId = event.id;
           show(job.title);
           show(job.description);
+          for (const skill of job.requiredSkills) {
+            show(skill);
+          }
+          for (const item of job.deliverables) {
+            show(item);
+          }
         }
         continue;
       }
@@ -233,6 +239,12 @@ function createSide(input: SideInput): MockSide {
       if (!read.ok) {
         remember(read.reason === "not_negotiation" ? "bad_message" : read.reason, event.id);
         continue;
+      }
+      if (read.message.type === "Proposal" || read.message.type === "CounterProposal") {
+        show(read.message.note);
+      }
+      if (read.message.type === "ApprovalDecision") {
+        show(read.message.comment);
       }
       if (read.message.type === "AgreementDraft" && !acceptableDraft(read.message)) {
         continue;
@@ -246,17 +258,10 @@ function createSide(input: SideInput): MockSide {
       lastMessageId = event.id;
       if (read.message.type === "Proposal") {
         latest = read.message.price;
-        show(read.message.note);
-      }
-      if (read.message.type === "CounterProposal") {
-        show(read.message.note);
       }
       if (read.message.type === "AgreementDraft") {
         latest = read.message.price;
         draftHash = read.message.transcriptHash;
-      }
-      if (read.message.type === "ApprovalDecision") {
-        show(read.message.comment);
       }
     }
   }
@@ -304,12 +309,12 @@ function createSide(input: SideInput): MockSide {
     if (isTerminal(session)) {
       return;
     }
-    if (isDue(session.expiresAt, input.clock.now())) {
-      tickDeadline("the deadline passed before a response");
-      return;
-    }
     await ingest();
     if (isTerminal(session)) {
+      return;
+    }
+    if (isDue(session.expiresAt, input.clock.now())) {
+      tickDeadline("the deadline passed before a response");
       return;
     }
     if (input.party === "client") {

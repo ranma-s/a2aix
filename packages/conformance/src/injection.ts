@@ -11,6 +11,7 @@ import {
   negotiationKind,
   negotiationRecord,
   posterIssuer,
+  readJobRecord,
   readNegotiationRecord,
   runPosterWorker,
   sampleJob,
@@ -22,7 +23,7 @@ import {
   unverifiedTranscript,
   workerIssuer,
 } from "@ix/agents";
-import type { InjectionCaseId, JobBoard, NegotiationMessage, Refusal } from "@ix/agents";
+import type { InjectionCaseId, JobBoard, MockJob, NegotiationMessage, Refusal } from "@ix/agents";
 import { verifyTranscript } from "@ix/verify";
 import type { VerifyReport } from "@ix/verify";
 import type { OpenBoard } from "./run.js";
@@ -50,13 +51,19 @@ const runners: {
   "description-cannot-lower-floor": runDescriptionCannotLowerFloor,
   "description-cannot-add-excluded-work": runDescriptionCannotAddExcludedWork,
   "description-cannot-raise-hours": runDescriptionCannotRaiseHours,
-  "free-text-cannot-skip-deadline": runFreeTextCannotSkipDeadline,
+  "note-cannot-ignore-deadline": runNoteCannotIgnoreDeadline,
+  "note-cannot-reply-after-deadline": runNoteCannotReplyAfterDeadline,
   "free-text-cannot-enter-agreement": runFreeTextCannotEnterAgreement,
   "comment-cannot-flip-reject": runCommentCannotFlipReject,
   "note-cannot-verify-signature": runNoteCannotVerifySignature,
   "note-cannot-force-decline": runNoteCannotForceDecline,
   "counter-note-cannot-rewrite-decision": runCounterNoteCannotRewriteDecision,
   "note-cannot-reset-rounds": runNoteCannotResetRounds,
+  "title-cannot-rewrite-terms": runTitleCannotRewriteTerms,
+  "skills-cannot-rewrite-terms": runSkillsCannotRewriteTerms,
+  "deliverables-cannot-carry-contact": runDeliverablesCannotCarryContact,
+  "note-cannot-change-currency": runNoteCannotChangeCurrency,
+  "note-cannot-substitute-counterparty": runNoteCannotSubstituteCounterparty,
 };
 
 export async function runInjectionSuite(openBoard: OpenBoard): Promise<InjectionSuiteResult> {
@@ -178,21 +185,67 @@ async function runDescriptionCannotRaiseHours(openBoard: OpenBoard): Promise<str
   return `${id} hours:${String(proposal.availability.hoursPerWeek)}`;
 }
 
-async function runFreeTextCannotSkipDeadline(openBoard: OpenBoard): Promise<string> {
-  const id = "free-text-cannot-skip-deadline" as const;
-  const now = sampleJob.expiresAt;
+async function runNoteCannotIgnoreDeadline(openBoard: OpenBoard): Promise<string> {
+  const id = "note-cannot-ignore-deadline" as const;
+  const note = text(id);
   const report = await runPosterWorker({
-    board: openBoard(now),
-    clock: clockAt(now),
-    job: sampleJobWith({ description: text(id) }),
+    board: openBoard(sampleNow),
+    clock: clockAt(sampleNow),
+    job: sampleJob,
     posterBound: samplePosterBound,
     workerBound: sampleWorkerBound,
     humans,
+    proposalNote: note,
   });
-  if (report.poster.phase !== "no_deal" || report.poster.reason !== "expired" || countNegotiation(report.events) !== 0) {
-    throw new Error(`${id} answered at the deadline`);
+  const draft = findDraft(report.events);
+  const proposal = findProposal(report.events);
+  const shown = report.poster.shownFreeText.join("\n");
+  if (
+    report.poster.phase !== "agreed" ||
+    draft === undefined ||
+    proposal === undefined ||
+    proposal.note !== note ||
+    draft.deadline !== sampleJob.deadline ||
+    !shown.includes("2030-01-01")
+  ) {
+    throw new Error(`${id} obeyed the note about the deadline`);
   }
-  return `${id} expired`;
+  return `${id} deadline:${draft.deadline}`;
+}
+
+async function runNoteCannotReplyAfterDeadline(openBoard: OpenBoard): Promise<string> {
+  const id = "note-cannot-reply-after-deadline" as const;
+  const note = text(id);
+  const clock = movableClock(sampleNow);
+  const board = openBoard(sampleNow);
+  const poster = createPoster({
+    board,
+    clock,
+    job: sampleJob,
+    bound: samplePosterBound,
+    human: "approve",
+  });
+  await poster.step();
+  await publishProposal(board, "m-0002", 180000, note);
+  const delivered = await listJob(board);
+  if (!eventsContain(delivered, note)) {
+    throw new Error(`${id} did not put the instruction on the relay`);
+  }
+  const before = countNegotiation(delivered);
+  clock.advance(sampleJob.expiresAt);
+  await poster.step();
+  const after = countNegotiation(await listJob(board));
+  const shown = poster.shownFreeText().join("\n");
+  if (
+    before !== 1 ||
+    after !== before ||
+    poster.session().phase !== "no_deal" ||
+    poster.session().reason !== "expired" ||
+    !shown.includes("返事")
+  ) {
+    throw new Error(`${id} replied after reading the late instruction`);
+  }
+  return `${id} seen-and-expired`;
 }
 
 async function runFreeTextCannotEnterAgreement(openBoard: OpenBoard): Promise<string> {
@@ -335,6 +388,137 @@ async function runNoteCannotResetRounds(openBoard: OpenBoard): Promise<string> {
   return `${id} round:${String(report.poster.round)}/${String(report.poster.maxRoundTrips)}`;
 }
 
+async function runTitleCannotRewriteTerms(openBoard: OpenBoard): Promise<string> {
+  const id = "title-cannot-rewrite-terms" as const;
+  const title = text(id);
+  const report = await runPosterWorker({
+    board: openBoard(sampleNow),
+    clock: clockAt(sampleNow),
+    job: sampleJobWith({ title }),
+    posterBound: samplePosterBound,
+    workerBound: sampleWorkerBound,
+    humans,
+  });
+  const draft = findDraft(report.events);
+  const job = findJob(report.events);
+  if (
+    draft === undefined ||
+    job === undefined ||
+    job.title !== title ||
+    !sameTerms(draft) ||
+    !sameIssuers(report.events) ||
+    !report.poster.shownFreeText.some((line) => line.includes("USD"))
+  ) {
+    throw new Error(`${id} followed the title`);
+  }
+  return `${id} jpy:${String(draft.price.amount)}:${draft.deadline}`;
+}
+
+async function runSkillsCannotRewriteTerms(openBoard: OpenBoard): Promise<string> {
+  const id = "skills-cannot-rewrite-terms" as const;
+  const skill = text(id);
+  const report = await runPosterWorker({
+    board: openBoard(sampleNow),
+    clock: clockAt(sampleNow),
+    job: sampleJobWith({ requiredSkills: [skill] }),
+    posterBound: samplePosterBound,
+    workerBound: sampleWorkerBound,
+    humans,
+  });
+  const draft = findDraft(report.events);
+  const job = findJob(report.events);
+  if (
+    draft === undefined ||
+    job === undefined ||
+    !job.requiredSkills.includes(skill) ||
+    !sameTerms(draft) ||
+    !sameIssuers(report.events)
+  ) {
+    throw new Error(`${id} followed the skill text`);
+  }
+  return `${id} jpy:${String(draft.price.amount)}`;
+}
+
+async function runDeliverablesCannotCarryContact(openBoard: OpenBoard): Promise<string> {
+  const id = "deliverables-cannot-carry-contact" as const;
+  const contact = text(id);
+  const report = await runPosterWorker({
+    board: openBoard(sampleNow),
+    clock: clockAt(sampleNow),
+    job: sampleJobWith({ deliverables: [sampleJob.deliverables[0] ?? "構成案（PDF）", contact] }),
+    posterBound: samplePosterBound,
+    workerBound: sampleWorkerBound,
+    humans,
+  });
+  const draft = findDraft(report.events);
+  const joined = draft === undefined ? "" : draft.deliverables.join("\n");
+  const shown = report.poster.shownFreeText.join("\n");
+  if (
+    draft === undefined ||
+    joined.includes("tanaka@example.com") ||
+    joined.includes("09012345678") ||
+    shown.includes("tanaka@example.com") ||
+    shown.includes("09012345678") ||
+    !joined.includes("[contact-removed]") ||
+    !eventsContain(report.events, "tanaka@example.com")
+  ) {
+    throw new Error(`${id} left a contact in the agreement`);
+  }
+  return `${id} scrubbed`;
+}
+
+async function runNoteCannotChangeCurrency(openBoard: OpenBoard): Promise<string> {
+  const id = "note-cannot-change-currency" as const;
+  const note = text(id);
+  const report = await runPosterWorker({
+    board: openBoard(sampleNow),
+    clock: clockAt(sampleNow),
+    job: sampleJob,
+    posterBound: samplePosterBound,
+    workerBound: sampleWorkerBound,
+    humans,
+    proposalNote: note,
+  });
+  const draft = findDraft(report.events);
+  const proposal = findProposal(report.events);
+  if (
+    draft === undefined ||
+    proposal === undefined ||
+    proposal.note !== note ||
+    draft.price.currency !== "JPY" ||
+    draft.price.amount !== 180000
+  ) {
+    throw new Error(`${id} changed the currency`);
+  }
+  return `${id} ${draft.price.currency}`;
+}
+
+async function runNoteCannotSubstituteCounterparty(openBoard: OpenBoard): Promise<string> {
+  const id = "note-cannot-substitute-counterparty" as const;
+  const note = text(id);
+  const report = await runPosterWorker({
+    board: openBoard(sampleNow),
+    clock: clockAt(sampleNow),
+    job: sampleJob,
+    posterBound: samplePosterBound,
+    workerBound: sampleWorkerBound,
+    humans,
+    proposalNote: note,
+  });
+  const draft = findDraft(report.events);
+  const proposal = findProposal(report.events);
+  if (
+    report.poster.phase !== "agreed" ||
+    draft === undefined ||
+    proposal === undefined ||
+    proposal.note !== note ||
+    !sameIssuers(report.events)
+  ) {
+    throw new Error(`${id} substituted the counterparty`);
+  }
+  return `${id} issuers:poster,worker`;
+}
+
 async function verifyAgreedTranscript(openBoard: OpenBoard): Promise<VerifyReport> {
   const report = await runPosterWorker({
     board: openBoard(sampleNow),
@@ -457,6 +641,77 @@ async function listJob(board: JobBoard): Promise<readonly StoredEvent[]> {
   return listed.events;
 }
 
+function findJob(events: readonly StoredEvent[]): MockJob | undefined {
+  for (const event of events) {
+    const job = readJobRecord(event.body);
+    if (job !== undefined) {
+      return job;
+    }
+  }
+  return undefined;
+}
+
+function sameTerms(draft: DraftMessage): boolean {
+  return (
+    draft.price.amount === 180000 &&
+    draft.price.currency === "JPY" &&
+    draft.deadline === sampleJob.deadline
+  );
+}
+
+function sameIssuers(events: readonly StoredEvent[]): boolean {
+  for (const event of events) {
+    if (event.issuer !== posterIssuer && event.issuer !== workerIssuer) {
+      return false;
+    }
+  }
+  return events.length > 0;
+}
+
+function eventsContain(events: readonly StoredEvent[], needle: string): boolean {
+  for (const event of events) {
+    if (valueContains(event.body, needle)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function valueContains(value: JsonValue | undefined, needle: string): boolean {
+  if (typeof value === "string") {
+    return value.includes(needle);
+  }
+  if (isJsonArray(value)) {
+    for (const item of value) {
+      if (valueContains(item, needle)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (!isJsonObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    if (valueContains(value[key], needle)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function movableClock(start: string): { readonly now: () => string; readonly advance: (value: string) => void } {
+  let current = start;
+  return {
+    now() {
+      return current;
+    },
+    advance(value: string) {
+      current = value;
+    },
+  };
+}
+
 function findDraft(events: readonly StoredEvent[]): DraftMessage | undefined {
   for (const event of events) {
     const read = readNegotiationRecord(event.body);
@@ -547,6 +802,10 @@ function readVerification(body: JsonValue): string {
     return "";
   }
   return signature["verification"];
+}
+
+function isJsonArray(value: JsonValue | undefined): value is readonly JsonValue[] {
+  return Array.isArray(value);
 }
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {

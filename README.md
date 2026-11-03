@@ -32,7 +32,7 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 - 依存の向きを CI で検査します。コアからアダプタへは戻れません。
 - JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。中身は未実装で、呼ぶと失敗します。テストベクトルは TODO です。
 - 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。
-- 適合テスト6項目のうち、署名なしで確かめられる4項目を、範囲を書いたうえで合格にしています。自由文の試験は12件で、名前は結果に残します。残り2項目は未実施です。緑でも、6項目すべてに合格したことにはなりません。
+- 適合テスト6項目のうち、署名なしで確かめられる4項目を、範囲を書いたうえで合格にしています。自由文の試験は18件で、名前は結果に残します。残り2項目は未実施です。緑でも、6項目すべてに合格したことにはなりません。
 - 検査を破る見本が `fixtures/guardrails/` にあります。普通のビルドには入れません。`pnpm guardrails` は、見本が失敗することと、許される書き方は成功することを確かめます。
 
 This revision is the foundation, the negotiation phase rules, an in-memory relay, mock poster and worker agents, and the checks that do not look at signatures. Signatures are not checked. The plain-language maps are [`docs/negotiation-states.md`](docs/negotiation-states.md), [`docs/distribution.md`](docs/distribution.md), [`docs/local-trial.md`](docs/local-trial.md), and [`docs/feature-map.md`](docs/feature-map.md).
@@ -47,7 +47,7 @@ This revision is the foundation, the negotiation phase rules, an in-memory relay
 - CI rejects a dependency that points the wrong way. Core cannot import adapters.
 - JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. It throws. Test vectors are TODO.
 - Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them.
-- Four of the six conformance items pass inside a recorded limit that does not check signatures. Item 6 names the twelve free-text cases it ran. The other two stay `pending`. A green run is not a full pass.
+- Four of the six conformance items pass inside a recorded limit that does not check signatures. Item 6 names the eighteen free-text cases it ran. The other two stay `pending`. A green run is not a full pass.
 - Violating dummies live in `fixtures/guardrails/` and stay out of the normal build. `pnpm guardrails` requires those dummies to fail and the allowed forms to pass.
 
 役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。
@@ -72,7 +72,7 @@ pnpm check
 | `pnpm boundaries` | 依存の向き、コメント禁止（ライセンスヘッダを除く）、空の `catch`、無期限ループ、暗号ライブラリ、秘密鍵。検査自体の自己テストも含みます。 |
 | `pnpm guardrails` | 禁止事項の見本が失敗し、許される書き方は成功する。`any`、危険な型変換、コメント、コアからアダプタまたはアプリへの依存。 |
 | `pnpm test` | ユニットテスト。適合スイートは含みません。 |
-| `pnpm conformance` | 適合テスト6項目。4項目は範囲つきで合格、2項目は `pending`。項目6は12件の自由文試験。署名の確認ではありません。 |
+| `pnpm conformance` | 適合テスト6項目。4項目は範囲つきで合格、2項目は `pending`。項目6は18件の自由文試験。署名の確認ではありません。 |
 
 CI は同じ6つを、別々のジョブで実行します。
 

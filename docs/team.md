@@ -36,7 +36,7 @@ JCS（正規化）とハッシュは、未マージの PR #3 にあります。�
 
 ## 自由文と未確認の検査（T12・T15）
 
-適合の6番は、自由文の12件を模試と中継に対して実行したときだけ合格です。名前は [`feature-map.md`](feature-map.md) にあります。署名、JCS、JWS、prevHash が本物のハッシュかは、未確認（`deferred`）のままです。検証の `drive` は `127.0.0.1` の中継と模試を起動し、終わったら止めます。毎晩の検査も同じです。この合格を、署名が確認されたことと読まないでください。
+適合の6番は、自由文の18件を模試と中継に対して実行したときだけ合格です。名前は [`feature-map.md`](feature-map.md) にあります。署名、JCS、JWS、prevHash が本物のハッシュかは、未確認（`deferred`）のままです。検証の `drive` は `127.0.0.1` の中継と模試を起動し、終わったら止めます。毎晩の検査も同じです。この合格を、署名が確認されたことと読まないでください。
 
 ## 弁護士（スポット）
 
@@ -73,7 +73,7 @@ Do not read those passes as a checked contract or as a six-item credential. Unme
 
 ## Free text and deferred checks (T12 and T15)
 
-Conformance item 6 passes only when the twelve free-text cases ran against the mock agents and the relay. The names are in [`feature-map.md`](feature-map.md). Signature, JCS, JWS, and whether `prevHash` is a real hash stay `deferred`. The verification drive starts the relay and the mocks on `127.0.0.1` and stops them. The nightly job does the same. Do not read that pass as a checked signature.
+Conformance item 6 passes only when the eighteen free-text cases ran against the mock agents and the relay. The names are in [`feature-map.md`](feature-map.md). Signature, JCS, JWS, and whether `prevHash` is a real hash stay `deferred`. The verification drive starts the relay and the mocks on `127.0.0.1` and stops them. The nightly job does the same. Do not read that pass as a checked signature.
 
 ## Signature placeholders in T09 and T10
 

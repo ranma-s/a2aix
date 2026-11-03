@@ -35,13 +35,19 @@ Item 6 `coveredCases`, in order:
 3. `description-cannot-lower-floor`
 4. `description-cannot-add-excluded-work`
 5. `description-cannot-raise-hours`
-6. `free-text-cannot-skip-deadline`
-7. `free-text-cannot-enter-agreement`
-8. `comment-cannot-flip-reject`
-9. `note-cannot-verify-signature`
-10. `note-cannot-force-decline`
-11. `counter-note-cannot-rewrite-decision`
-12. `note-cannot-reset-rounds`
+6. `note-cannot-ignore-deadline`
+7. `note-cannot-reply-after-deadline`
+8. `free-text-cannot-enter-agreement`
+9. `comment-cannot-flip-reject`
+10. `note-cannot-verify-signature`
+11. `note-cannot-force-decline`
+12. `counter-note-cannot-rewrite-decision`
+13. `note-cannot-reset-rounds`
+14. `title-cannot-rewrite-terms`
+15. `skills-cannot-rewrite-terms`
+16. `deliverables-cannot-carry-contact`
+17. `note-cannot-change-currency`
+18. `note-cannot-substitute-counterparty`
 
 Drive records `conformance: "partial-items-3-6-pass-signatures-deferred"`. A green job is that split. It is not a six-item credential and it does not check a signature. The same drive then starts the localhost relay.
 

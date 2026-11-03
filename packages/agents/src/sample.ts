@@ -55,16 +55,19 @@ export function sampleJobWith(patch: {
   readonly scope?: string;
   readonly hoursPerWeek?: number;
   readonly description?: string;
+  readonly title?: string;
+  readonly requiredSkills?: readonly string[];
+  readonly deliverables?: readonly string[];
 }): MockJob {
   const amount = patch.budgetAmount ?? sampleJob.budgetMax.amount;
   const minimum = patch.budgetAmount ?? sampleJob.budgetMin.amount;
   return {
     jobId: sampleJob.jobId,
     agentCard: sampleJob.agentCard,
-    title: sampleJob.title,
+    title: patch.title ?? sampleJob.title,
     description: patch.description ?? sampleJob.description,
     scope: patch.scope ?? sampleJob.scope,
-    deliverables: sampleJob.deliverables,
+    deliverables: patch.deliverables ?? sampleJob.deliverables,
     budgetMin: {
       amount: minimum,
       currency: sampleJob.budgetMin.currency,
@@ -75,7 +78,7 @@ export function sampleJobWith(patch: {
       currency: sampleJob.budgetMax.currency,
       taxIncluded: sampleJob.budgetMax.taxIncluded,
     },
-    requiredSkills: sampleJob.requiredSkills,
+    requiredSkills: patch.requiredSkills ?? sampleJob.requiredSkills,
     maxRoundTrips: sampleJob.maxRoundTrips,
     expiresAt: sampleJob.expiresAt,
     hoursPerWeek: patch.hoursPerWeek ?? sampleJob.hoursPerWeek,

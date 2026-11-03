@@ -18,6 +18,7 @@ import {
   specCurrency,
   unverifiedTranscript,
 } from "./kinds.js";
+import { redactFreeText } from "./redact.js";
 import { isRfc3339 } from "./time.js";
 import type { MockJob } from "./types.js";
 
@@ -86,14 +87,17 @@ export function buildDraft(input: {
     author: "client",
     agreementId: `agr-${input.job.jobId}`,
     transcriptHash: unverifiedTranscript(input.price.amount),
-    scope: input.job.scope,
-    deliverables: input.job.deliverables,
+    scope: redactFreeText(input.job.scope),
+    deliverables: scrubList(input.job.deliverables),
     price: input.price,
     deadline: input.job.deadline,
-    acceptanceCriteria: input.job.acceptanceCriteria,
+    acceptanceCriteria: redactFreeText(input.job.acceptanceCriteria),
     revisionLimit: input.job.revisionLimit,
-    localRules: input.job.localRules,
-    localTerms: input.job.localTerms,
+    localRules: redactFreeText(input.job.localRules),
+    localTerms: {
+      paymentDueDate: input.job.localTerms.paymentDueDate,
+      ipOwnership: redactFreeText(input.job.localTerms.ipOwnership),
+    },
     expiresAt: input.expiresAt,
     signature: placeholderSignature(),
   };
@@ -164,6 +168,17 @@ function negotiationActive(header: string): boolean {
     }
   }
   return false;
+}
+
+function scrubList(values: readonly string[]): readonly string[] {
+  const copy: string[] = [];
+  for (const value of values) {
+    const scrubbed = redactFreeText(value);
+    if (scrubbed.trim().length > 0) {
+      copy.push(scrubbed);
+    }
+  }
+  return copy;
 }
 
 function placeholderSignature(): UnverifiedSignature {
