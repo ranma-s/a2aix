@@ -529,7 +529,7 @@ no\_deal の状態の使い分け: Taskを持つ発注側のAgentが断ったと
 
 | type | 送る側 | 主な項目 | 相手に届くか |
 | --- | --- | --- | --- |
-| `JobPosting`（依頼票） | 発注側のAgent | `jobId` `agentCard` `title` `description` `deliverables` `budget`（min・max） `deadline` `requiredSkills` `localRules` `acceptanceCriteria` `revisionLimit` `expiresAt` `signature` | 流通層でイベントの body として配られる。A2Aのメッセージではない（社名などは伏せる） |
+| `JobPosting`（依頼票） | 発注側のAgent | `jobId` `agentCard` `title` `description` `deliverables` `budgetMin` `budgetMax` `deadline` `requiredSkills` `localRules` `acceptanceCriteria` `revisionLimit` `expiresAt` `signature` | 流通層でイベントの body として配られる。A2Aのメッセージではない（社名などは伏せる） |
 | `Mandate`（委任範囲） | 人間が署名し、自分のAgentに渡す | `party` `maxAmount`または`minAmount` `deadlineRange` `maxHoursPerWeek` `excludedWork` `expiresAt` `signature` | 届かない。本人の側だけで使う |
 | `Proposal`（提案） | 受注側のAgent | `jobId` `scope` `price` `deadline` `availability` `credentials` `note` `prevHash` `signature` | 届く |
 | `CounterProposal`（対案） | どちらのAgentも | `inReplyTo` `decision`（`counter` / `accept` / `decline`） `changes` `note` `prevHash` `signature` | 届く |
@@ -666,10 +666,8 @@ no\_deal の状態の使い分け: Taskを持つ発注側のAgentが断ったと
     "jobId": "job-1024",
     "agentCard": "https://agent.example.com/.well-known/agent-card.json",
     "title": "新サービスLPの構成案とコピー",
-    "budget": {
-      "min": { "amount": 150000, "currency": "JPY", "taxIncluded": false },
-      "max": { "amount": 200000, "currency": "JPY", "taxIncluded": false }
-    },
+    "budgetMin": { "amount": 150000, "currency": "JPY", "taxIncluded": false },
+    "budgetMax": { "amount": 200000, "currency": "JPY", "taxIncluded": false },
     "deadline": "2026-12-10",
     "localRules": "jp-freelance/1.0",
     "revisionLimit": 2
