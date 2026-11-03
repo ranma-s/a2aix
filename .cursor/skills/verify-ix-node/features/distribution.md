@@ -24,7 +24,7 @@ The `@ix/node` unit test still checks `describeNode("open").acceptsPublicPublish
 ## Gotchas
 
 - Drive may launch `scripts/local-ix.mjs` only with `IX_BIND=127.0.0.1`. Do not bind another address, publish a host port, or start the compose file from drive.
-- Do not sign an event. Signatures need a human security reviewer. PR #3 (JCS) is still unmerged.
+- Do not sign an event. Signatures need a human security reviewer. PR #3 (JCS and SHA-256) is merged; signing is still not implemented.
 - Do not compute an event id. `@ix/jcs` `canonicalize` throws. `JSON.stringify` is not a stand-in. The caller supplies `id`.
 - Unknown kinds and tags are stored. Do not reject them in the relay.
 - An event with `now >= expiresAt` is discarded, including the exact instant.

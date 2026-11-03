@@ -47,10 +47,26 @@ function run(command, args) {
   };
 }
 
+function timeZoneDataProblem(runtimeVersion) {
+  const zonesFile = path.join(root, "packages", "a2a-ext-negotiation", "src", "zones.ts");
+  const match = /export const tzdbVersion = "([0-9]{4}[a-z])"/.exec(fs.readFileSync(zonesFile, "utf8"));
+  if (match === null) {
+    return "tzdbVersion is missing from packages/a2a-ext-negotiation/src/zones.ts";
+  }
+  if (runtimeVersion !== match[1]) {
+    return `Node.js time zone data is ${runtimeVersion ?? "unknown"} but the deadline zone list is tzdb ${match[1]}. Deadlines would be judged differently on other nodes. Use a Node.js build with tzdb ${match[1]} or update zones.ts`;
+  }
+  return undefined;
+}
+
 function doctor() {
   const major = Number(process.versions.node.split(".")[0]);
   if (!Number.isInteger(major) || major < 22) {
     fail(`Node.js >= 22 is required, found ${process.version}`);
+  }
+  const zoneProblem = timeZoneDataProblem(process.versions.tz);
+  if (zoneProblem !== undefined) {
+    fail(zoneProblem);
   }
   const pnpm = run("pnpm", ["--version"]);
   if (pnpm.exitCode !== 0) {
@@ -70,9 +86,15 @@ function doctor() {
   console.log("doctor: ok");
   console.log("doctor: drive is the step that starts 127.0.0.1");
   console.log(`doctor: pnpm ${pnpm.stdout.trim()}`);
+  console.log(`doctor: time zone data ${process.versions.tz}`);
 }
 
 function drive() {
+  const zoneProblem = timeZoneDataProblem(process.versions.tz);
+  if (zoneProblem !== undefined) {
+    console.error(`drive: ${zoneProblem}`);
+    process.exit(1);
+  }
   const startedAt = new Date().toISOString();
   const steps = [
     run("pnpm", ["typecheck"]),

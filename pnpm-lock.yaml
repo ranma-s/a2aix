@@ -151,7 +151,11 @@ importers:
         specifier: workspace:*
         version: link:../distribution
 
-  packages/protocol-core: {}
+  packages/protocol-core:
+    dependencies:
+      '@ix/jcs':
+        specifier: workspace:*
+        version: link:../jcs
 
   packages/verify:
     dependencies:
