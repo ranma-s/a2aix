@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkTermDefinition,
+  deadlineIn,
   applyTermMessage,
   buildTermAgreement,
   checkTermValue,
@@ -72,8 +73,8 @@ const fixAllCore: readonly TermMessage[] = [
   propose("worker", "ix:price", yen(200000)),
   counter("client", "ix:price", yen(180000)),
   accept("worker", "ix:price", yen(180000)),
-  propose("worker", "ix:deadline", "2026-12-20"),
-  accept("client", "ix:deadline", "2026-12-20"),
+  propose("worker", "ix:deadline", { at: "2026-12-20T18:00:00+09:00", zone: "Asia/Tokyo" }),
+  accept("client", "ix:deadline", { at: "2026-12-20T18:00:00+09:00", zone: "Asia/Tokyo" }),
   propose("client", "ix:revision-limit", 2),
   accept("worker", "ix:revision-limit", 2),
   propose("client", "ix:acceptance-window", { value: 7, unit: "day" }),
@@ -92,8 +93,9 @@ describe("term values", () => {
     expect(checkTermValue(price, yen(180000))).toBeUndefined();
     expect(checkTermValue(price, "未定")).toBeDefined();
     expect(checkTermValue(price, { amount: 1.5, currency: "JPY", taxIncluded: true })).toBeDefined();
-    expect(checkTermValue(deadline, "2026-02-30")).toBeDefined();
+    expect(checkTermValue(deadline, "2026-12-10")).toBeDefined();
     expect(checkTermValue(deadline, "TBD")).toBeDefined();
+    expect(checkTermValue(deadline, { at: "2026-02-30T18:00:00+09:00", zone: "Asia/Tokyo" })).toBeDefined();
     expect(checkTermValue(revisions, -1)).toBeDefined();
     expect(checkTermValue(window, { value: 7, unit: "week" })).toBeDefined();
   });
@@ -380,5 +382,21 @@ describe("term-by-term negotiation", () => {
       expect(() => applyTermMessage(session, message, clock)).not.toThrow();
       expect(applyTermMessage(session, message, clock).ok).toBe(false);
     }
+  });
+
+  it("needs a deadline as an instant whose offset matches its IANA zone, including summer time", () => {
+    const [, deadline] = coreSheet.required;
+    if (deadline === undefined) {
+      throw new Error("core sheet is incomplete");
+    }
+    expect(checkTermValue(deadline, { at: "2026-12-10T18:00:00+09:00", zone: "Asia/Tokyo" })).toBeUndefined();
+    expect(checkTermValue(deadline, { at: "2026-12-10T01:00:00-08:00", zone: "America/Los_Angeles" })).toBeUndefined();
+    expect(checkTermValue(deadline, { at: "2026-07-10T01:00:00-07:00", zone: "America/Los_Angeles" })).toBeUndefined();
+    expect(checkTermValue(deadline, { at: "2026-07-10T01:00:00-08:00", zone: "America/Los_Angeles" })).toBeDefined();
+    expect(checkTermValue(deadline, { at: "2026-12-10T18:00:00+09:00", zone: "America/Los_Angeles" })).toBeDefined();
+    expect(checkTermValue(deadline, { at: "2026-12-10T09:00:00Z", zone: "UTC" })).toBeUndefined();
+    expect(checkTermValue(deadline, { at: "2026-12-10T18:00:00+09:00", zone: "Mars/Olympus" })).toBeDefined();
+    expect(checkTermValue(deadline, { at: "2026-12-10T18:00:00", zone: "Asia/Tokyo" })).toBeDefined();
+    expect(deadlineIn(Date.parse("2026-12-15T09:00:00Z"), "Asia/Kolkata")).toEqual({ at: "2026-12-15T14:30:00+05:30", zone: "Asia/Kolkata" });
   });
 });

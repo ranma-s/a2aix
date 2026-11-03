@@ -16,6 +16,7 @@ export const termValueTypes = [
   "money",
   "date",
   "datetime",
+  "deadline",
   "integer",
   "duration",
   "boolean",
@@ -208,7 +209,7 @@ export type TermResult =
 
 export const coreTerms = [
   { termId: "ix:price", version: 1, valueType: "money", label: { ja: "金額", en: "Price" } },
-  { termId: "ix:deadline", version: 1, valueType: "date", label: { ja: "納期", en: "Deadline" } },
+  { termId: "ix:deadline", version: 1, valueType: "deadline", label: { ja: "納期", en: "Deadline" } },
   {
     termId: "ix:revision-limit",
     version: 1,
@@ -375,12 +376,11 @@ export function checkTermValue(definition: TermDefinition, value: TermJson): str
     case "date":
       return typeof value === "string" && isCalendarDate(value) ? undefined : "date must be YYYY-MM-DD";
     case "datetime":
-      return typeof value === "string" &&
-        datetimePattern.test(value) &&
-        isCalendarDate(value.slice(0, 10)) &&
-        !Number.isNaN(Date.parse(value))
+      return typeof value === "string" && isInstant(value)
         ? undefined
         : "datetime must be RFC 3339 with an offset";
+    case "deadline":
+      return checkDeadline(value);
     case "integer":
       return isCount(value, 0) ? undefined : "integer must be a whole number of 0 or more";
     case "duration":
@@ -405,6 +405,96 @@ export function checkTermValue(definition: TermDefinition, value: TermJson): str
     case "documents":
       return checkDocuments(value);
   }
+}
+
+const zoneNamePattern = /^(?:UTC|[A-Z][A-Za-z_]+(?:\/[A-Za-z0-9_+-]+){1,2})$/;
+
+export function zoneOffsetMinutes(zone: string, instantMs: number): number | undefined {
+  if (!zoneNamePattern.test(zone) || !Number.isFinite(instantMs)) {
+    return undefined;
+  }
+  let format: Intl.DateTimeFormat;
+  try {
+    format = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch (error: unknown) {
+    if (error instanceof RangeError) {
+      return undefined;
+    }
+    throw error;
+  }
+  const parts: { [type: string]: number } = {};
+  for (const part of format.formatToParts(new Date(instantMs))) {
+    if (part.type !== "literal") {
+      parts[part.type] = Number(part.value);
+    }
+  }
+  const local = Date.UTC(
+    parts["year"] ?? 0,
+    (parts["month"] ?? 1) - 1,
+    parts["day"] ?? 1,
+    parts["hour"] ?? 0,
+    parts["minute"] ?? 0,
+    parts["second"] ?? 0,
+  );
+  const whole = instantMs - (instantMs % 1000 + 1000) % 1000;
+  return Math.round((local - whole) / 60000);
+}
+
+function offsetOf(at: string): number | undefined {
+  if (at.endsWith("Z")) {
+    return 0;
+  }
+  const match = /([+-])(\d{2}):(\d{2})$/.exec(at);
+  if (match === null) {
+    return undefined;
+  }
+  const minutes = Number(match[2]) * 60 + Number(match[3]);
+  return match[1] === "-" ? -minutes : minutes;
+}
+
+function isInstant(value: string): boolean {
+  return datetimePattern.test(value) && isCalendarDate(value.slice(0, 10)) && !Number.isNaN(Date.parse(value));
+}
+
+function checkDeadline(value: TermJson): string | undefined {
+  if (!isObject(value) || !hasOnlyKeys(value, ["at", "zone"]) || typeof value["at"] !== "string" || typeof value["zone"] !== "string") {
+    return "deadline needs at (RFC 3339 with offset) and zone (IANA time zone)";
+  }
+  const at = value["at"];
+  if (!isInstant(at)) {
+    return "deadline at must be RFC 3339 with an offset";
+  }
+  const expected = zoneOffsetMinutes(value["zone"], Date.parse(at));
+  if (expected === undefined) {
+    return "deadline zone must be an IANA time zone such as Asia/Tokyo";
+  }
+  if (offsetOf(at) !== expected) {
+    return "the offset in deadline at does not match the zone at that moment";
+  }
+  return undefined;
+}
+
+export function deadlineIn(instantMs: number, zone: string): TermJson | undefined {
+  const offset = zoneOffsetMinutes(zone, instantMs);
+  if (offset === undefined) {
+    return undefined;
+  }
+  const local = new Date(instantMs + offset * 60000).toISOString();
+  const clock = instantMs % 1000 === 0 ? local.slice(0, 19) : local.slice(0, 23);
+  const sign = offset < 0 ? "-" : "+";
+  const size = Math.abs(offset);
+  const hours = String(Math.floor(size / 60)).padStart(2, "0");
+  const minutes = String(size % 60).padStart(2, "0");
+  return { at: `${clock}${sign}${hours}:${minutes}`, zone };
 }
 
 function checkCodes(value: TermJson, codes: readonly string[] | undefined): string | undefined {

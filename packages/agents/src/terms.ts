@@ -3,6 +3,7 @@ import {
   buildTermAgreement,
   checkTermValue,
   counterpartOf,
+  deadlineIn,
   isCurrencyCode,
   openTermSession,
   readyForAgreement,
@@ -24,8 +25,8 @@ import type {
 export type TermLimit =
   | { readonly kind: "money-max"; readonly currency: string; readonly taxIncluded: boolean; readonly ask: number; readonly max: number }
   | { readonly kind: "money-min"; readonly currency: string; readonly taxIncluded: boolean; readonly ask: number; readonly min: number }
-  | { readonly kind: "date-by"; readonly ask: string; readonly latest: string }
-  | { readonly kind: "date-from"; readonly ask: string; readonly earliest: string }
+  | { readonly kind: "deadline-by"; readonly zone: string; readonly ask: string; readonly latest: string }
+  | { readonly kind: "deadline-from"; readonly zone: string; readonly ask: string; readonly earliest: string }
   | { readonly kind: "integer-range"; readonly ask: number; readonly min: number; readonly max: number }
   | { readonly kind: "one-of"; readonly values: readonly TermJson[] }
   | { readonly kind: "documents-held"; readonly files: { readonly [path: string]: string } };
@@ -113,10 +114,14 @@ export function withinLimit(limit: TermLimit, value: TermJson | undefined): bool
       const amount = amountOf(value, limit);
       return amount !== undefined && amount >= limit.min;
     }
-    case "date-by":
-      return typeof value === "string" && value <= limit.latest;
-    case "date-from":
-      return typeof value === "string" && value >= limit.earliest;
+    case "deadline-by": {
+      const at = instantOf(value);
+      return at !== undefined && at <= Date.parse(limit.latest);
+    }
+    case "deadline-from": {
+      const at = instantOf(value);
+      return at !== undefined && at >= Date.parse(limit.earliest);
+    }
     case "integer-range":
       return typeof value === "number" && value >= limit.min && value <= limit.max;
     case "one-of":
@@ -144,10 +149,23 @@ function documentsMatch(held: { readonly [path: string]: string }, value: TermJs
 }
 
 
-const dateTerm = { termId: "ix:deadline", version: 1, valueType: "date" } as const;
+const instantTerm = { termId: "ix:instant", version: 1, valueType: "datetime" } as const;
+const deadlineTerm = { termId: "ix:deadline", version: 1, valueType: "deadline" } as const;
 
-function isDate(value: string): boolean {
-  return checkTermValue(dateTerm, value) === undefined;
+function isInstant(value: string): boolean {
+  return checkTermValue(instantTerm, value) === undefined;
+}
+
+function instantOf(value: TermJson | undefined): number | undefined {
+  if (value === undefined || checkTermValue(deadlineTerm, value) !== undefined || !isTermObject(value)) {
+    return undefined;
+  }
+  const at = value["at"];
+  return typeof at === "string" ? Date.parse(at) : undefined;
+}
+
+function deadlineAt(zone: string, instant: string): TermJson | undefined {
+  return isInstant(instant) ? deadlineIn(Date.parse(instant), zone) : undefined;
 }
 
 export function checkTermLimit(limit: TermLimit): string | undefined {
@@ -160,10 +178,14 @@ export function checkTermLimit(limit: TermLimit): string | undefined {
       return isCurrencyCode(limit.currency) && Number.isSafeInteger(limit.ask) && Number.isSafeInteger(limit.min) && limit.min >= 0 && limit.ask >= limit.min
         ? undefined
         : "money-min needs a currency and 0 <= min <= ask";
-    case "date-by":
-      return isDate(limit.ask) && isDate(limit.latest) && limit.ask <= limit.latest ? undefined : "date-by needs real YYYY-MM-DD dates with ask on or before latest";
-    case "date-from":
-      return isDate(limit.ask) && isDate(limit.earliest) && limit.ask >= limit.earliest ? undefined : "date-from needs real YYYY-MM-DD dates with ask on or after earliest";
+    case "deadline-by":
+      return isInstant(limit.ask) && isInstant(limit.latest) && deadlineAt(limit.zone, limit.ask) !== undefined && Date.parse(limit.ask) <= Date.parse(limit.latest)
+        ? undefined
+        : "deadline-by needs an IANA zone and RFC 3339 instants with ask at or before latest";
+    case "deadline-from":
+      return isInstant(limit.ask) && isInstant(limit.earliest) && deadlineAt(limit.zone, limit.ask) !== undefined && Date.parse(limit.ask) >= Date.parse(limit.earliest)
+        ? undefined
+        : "deadline-from needs an IANA zone and RFC 3339 instants with ask at or after earliest";
     case "integer-range":
       return Number.isSafeInteger(limit.min) && Number.isSafeInteger(limit.max) && Number.isSafeInteger(limit.ask) && limit.min <= limit.ask && limit.ask <= limit.max
         ? undefined
@@ -190,9 +212,9 @@ function preferred(limit: TermLimit): TermJson | undefined {
     case "money-max":
     case "money-min":
       return money(limit, limit.ask);
-    case "date-by":
-    case "date-from":
-      return limit.ask;
+    case "deadline-by":
+    case "deadline-from":
+      return deadlineAt(limit.zone, limit.ask);
     case "integer-range":
       return limit.ask;
     case "one-of":
@@ -212,10 +234,10 @@ function concession(limit: TermLimit, offered: TermJson | undefined): TermJson |
       const amount = amountOf(offered, limit);
       return amount === undefined ? money(limit, limit.min) : money(limit, Math.max(limit.min, Math.min(limit.ask, Math.round((amount + limit.min) / 2))));
     }
-    case "date-by":
-      return limit.latest;
-    case "date-from":
-      return limit.earliest;
+    case "deadline-by":
+      return deadlineAt(limit.zone, limit.latest);
+    case "deadline-from":
+      return deadlineAt(limit.zone, limit.earliest);
     case "integer-range":
       return typeof offered === "number" ? Math.min(limit.max, Math.max(limit.min, offered)) : limit.ask;
     case "one-of":

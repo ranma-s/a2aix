@@ -61,6 +61,7 @@ export {
   coreSheet,
   coreTerms,
   counterpartOf,
+  deadlineIn,
   durationUnits,
   initialSpecTerm,
   isCurrencyCode,
@@ -77,6 +78,7 @@ export {
   termValueTypes,
   valueHashVerification,
   webSiteSheet,
+  zoneOffsetMinutes,
 } from "./terms.js";
 export type {
   DealDeclineMessage,

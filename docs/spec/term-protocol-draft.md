@@ -29,7 +29,8 @@
 | --- | --- | --- |
 | `money` | `{"amount": 整数, "currency": 現行の ISO 4217 の通貨コード, "taxIncluded": 真偽}` | `{"amount":180000,"currency":"JPY","taxIncluded":true}` |
 | `date` | ISO 8601 の日付 | `"2026-12-10"` |
-| `datetime` | RFC 3339 の時刻 | `"2026-12-10T18:00:00+09:00"` |
+| `datetime` | RFC 3339 の時刻（時差つき） | `"2026-12-10T18:00:00+09:00"` |
+| `deadline` | 期限の一瞬（`at`、RFC 3339 の時差つき）と地域名（`zone`、IANA の名前）。`at` の時差は、その一瞬の `zone` の時差と一致しなければならない（夏時間を含む） | `{"at":"2026-12-10T18:00:00+09:00","zone":"Asia/Tokyo"}` |
 | `integer` | 整数（`unit` 付き可） | `2` |
 | `duration` | 整数と単位（`day` `hour`） | `{"value":7,"unit":"day"}` |
 | `boolean` | 真偽 | `true` |
@@ -42,6 +43,13 @@
 「未定」「要相談」は、どの型でも書けない。値がなければ、その項目はまだ確定していないだけである。
 
 `textRef` は、機械で比べられない取り決め（デザインの方向性など）を、文書の指紋として固定するための逃げ道。文書の中身は合意しても、機械はその良し悪しを判定しない。
+
+### 2.0 期限と時差
+
+- 期限は日付だけでは決めない。必ず、時差つきの一瞬（`at`）と地域名（`zone`）で決める。日付だけだと、何時までか、どの国の日付かが決まらないからである。
+- 機械は `at` の一瞬だけで、期限の前か後かを判断する。`zone` は人に見せるためと、時差の書き間違いを見つけるためにある。相手の画面には、相手の地域の時刻に直して見せてよい。
+- 「その日のうちならよい」という取り決めは、その地域のその日の 23:59:59 を `at` に書いて合意する。
+- 検収期間などの `duration` の `day` は、暦の24時間（土日祝日も数える）。営業日で数える取り決めは、国の記号つきの別の項目として、あとで足す。
 
 ### 2.1 仕様書などのファイルを合意する（`documents`）
 
@@ -84,9 +92,9 @@
 | 共通の核の項目 | 型 |
 | --- | --- |
 | `ix:price` | `money` |
-| `ix:deadline` | `date` |
+| `ix:deadline` | `deadline` |
 | `ix:revision-limit` | `integer` |
-| `ix:acceptance-window` | `duration`（納品から検収の返事までの期間） |
+| `ix:acceptance-window` | `duration`（納品した一瞬から検収の返事までの期間。`day` は暦の24時間で、土日祝日も数える） |
 | `ix:deliverables` | `count`（納品物の種類と数） |
 | `ix:deliverable-format` | `codes`（ファイルの形式） |
 
@@ -142,7 +150,7 @@
 
 ## 5. エージェントと人間の分担
 
-- 人間は、自分のエージェントに **項目ごとの委任範囲** を渡す（例: `ix:price` は 150,000〜200,000 円、`ix:deadline` は 2026-12-20 まで）。今の `Mandate` を、項目の識別子で書く形に広げる。
+- 人間は、自分のエージェントに **項目ごとの委任範囲** を渡す（例: `ix:price` は 150,000〜200,000 円、`ix:deadline` は東京時間の 2026-12-20 18:00 まで）。今の `Mandate` を、項目の識別子で書く形に広げる。
 - エージェントは、範囲の中なら自分で `TermAccept` してよい。範囲の外、または委任範囲に書かれていない項目は、自分の人間に聞く。
 - 人間は、承認アプリから直接 `TermPropose` `TermAccept` を出してもよい。そのときの `signature` は人間の鍵で付ける。
 - 相手のエージェントには、委任範囲を見せない。
@@ -249,7 +257,7 @@
 受注側  TermAccept   ix:price           valueHash=…        → ix:price は fixed
 発注側  TermPropose  web:page-count     5
 受注側  TermAccept   web:page-count     valueHash=…        → fixed
-受注側  TermPropose  ix:deadline        "2026-12-20"
+受注側  TermPropose  ix:deadline        {"at":"2026-12-20T18:00:00+09:00","zone":"Asia/Tokyo"}
 発注側  TermAccept   ix:deadline        valueHash=…        → fixed
 発注側  TermPropose  ix:initial-spec    {"manifestSha256":"9f2c…","files":[
                                           {"path":"requirements.pdf","sha256":"a41b…","bytes":182344,"mediaType":"application/pdf"},

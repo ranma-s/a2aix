@@ -17,7 +17,7 @@ const spec: TermJson = {
 
 const clientMandate: TermMandate = {
   "ix:price": { kind: "money-max", currency: "JPY", taxIncluded: true, ask: 150000, max: 180000 },
-  "ix:deadline": { kind: "date-by", ask: "2026-12-10", latest: "2026-12-20" },
+  "ix:deadline": { kind: "deadline-by", zone: "Asia/Tokyo", ask: "2026-12-10T18:00:00+09:00", latest: "2026-12-20T18:00:00+09:00" },
   "ix:revision-limit": { kind: "integer-range", ask: 3, min: 1, max: 3 },
   "ix:acceptance-window": { kind: "one-of", values: [{ value: 7, unit: "day" }] },
   "ix:deliverables": { kind: "one-of", values: [[{ code: "web-page", n: 5 }]] },
@@ -29,7 +29,7 @@ const clientMandate: TermMandate = {
 
 const workerMandate: TermMandate = {
   "ix:price": { kind: "money-min", currency: "JPY", taxIncluded: true, ask: 200000, min: 170000 },
-  "ix:deadline": { kind: "date-from", ask: "2026-12-25", earliest: "2026-12-15" },
+  "ix:deadline": { kind: "deadline-from", zone: "America/Los_Angeles", ask: "2026-12-25T17:00:00-08:00", earliest: "2026-12-15T09:00:00Z" },
   "ix:revision-limit": { kind: "integer-range", ask: 1, min: 1, max: 2 },
   "ix:acceptance-window": { kind: "one-of", values: [{ value: 7, unit: "day" }, { value: 5, unit: "day" }] },
   "ix:deliverables": { kind: "one-of", values: [[{ code: "web-page", n: 5 }]] },
@@ -81,7 +81,7 @@ describe("mock agents negotiating term by term", () => {
     const amount = priceAmount(price);
     expect(amount).toBeGreaterThanOrEqual(170000);
     expect(amount).toBeLessThanOrEqual(180000);
-    expect(fixedValue(result, "ix:deadline")).toBe("2026-12-15");
+    expect(fixedValue(result, "ix:deadline")).toEqual({ at: "2026-12-15T01:00:00-08:00", zone: "America/Los_Angeles" });
     expect(fixedValue(result, "ix:initial-spec")).toEqual(spec);
     expect(result.transcript.some((message) => message.type === "TermCounter")).toBe(true);
   });
@@ -126,7 +126,7 @@ describe("mock agents negotiating term by term", () => {
         trial({
           client: {
             party: "client",
-            mandate: { ...clientMandate, "ix:deadline": { kind: "date-by", ask: "2027-06-01", latest: "2026-12-20" } },
+            mandate: { ...clientMandate, "ix:deadline": { kind: "deadline-by", zone: "Asia/Tokyo", ask: "2027-06-01T18:00:00+09:00", latest: "2026-12-20T18:00:00+09:00" } },
             human: "approve",
           },
         }),
@@ -148,19 +148,23 @@ describe("mock agents negotiating term by term", () => {
   it("never fixes a value outside either side's mandate", () => {
     const result = runTermTrial(trial());
     const deadline = fixedValue(result, "ix:deadline");
-    expect(typeof deadline === "string" && deadline <= "2026-12-20" && deadline >= "2026-12-15").toBe(true);
+    const at = typeof deadline === "object" && deadline !== null && !isList(deadline) ? deadline["at"] : undefined;
+    const instant = typeof at === "string" ? Date.parse(at) : Number.NaN;
+    expect(instant >= Date.parse("2026-12-15T09:00:00Z") && instant <= Date.parse("2026-12-20T18:00:00+09:00")).toBe(true);
     const revisions = fixedValue(result, "ix:revision-limit");
     expect(typeof revisions === "number" && revisions >= 1 && revisions <= 2).toBe(true);
   });
 
   it("refuses date limits that are not real dates", () => {
-    for (const latest of ["9999-99-99", "zzz", ""]) {
+    for (const latest of ["9999-99-99T00:00:00Z", "zzz", "", "2026-12-20"]) {
       expect(() =>
-        runTermTrial(trial({ client: { party: "client", mandate: { ...clientMandate, "ix:deadline": { kind: "date-by", ask: "2026-12-01", latest } }, human: "approve" } })),
+        runTermTrial(trial({ client: { party: "client", mandate: { ...clientMandate, "ix:deadline": { kind: "deadline-by", zone: "Asia/Tokyo", ask: "2026-12-01T18:00:00+09:00", latest } }, human: "approve" } })),
       ).toThrow(/ix:deadline/);
     }
-    expect(() =>
-      runTermTrial(trial({ worker: { party: "worker", mandate: { ...workerMandate, "ix:deadline": { kind: "date-from", ask: "2026-12-31", earliest: "" } }, human: "approve" } })),
-    ).toThrow(/ix:deadline/);
+    for (const zone of ["Mars/Olympus", "+09:00", ""]) {
+      expect(() =>
+        runTermTrial(trial({ worker: { party: "worker", mandate: { ...workerMandate, "ix:deadline": { kind: "deadline-from", zone, ask: "2026-12-31T18:00:00+09:00", earliest: "2026-12-15T00:00:00Z" } }, human: "approve" } })),
+      ).toThrow(/ix:deadline/);
+    }
   });
 });
