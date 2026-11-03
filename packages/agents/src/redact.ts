@@ -103,7 +103,7 @@ function visualMarks(value: string): readonly Mark[] {
 }
 
 function atEntityWidth(value: string, index: number): number {
-  const match = /^&#(?:0*64|x0*40);/i.exec(value.slice(index));
+  const match = /^&(?:amp;)*(?:#(?:0*64(?![0-9]+;)|x0*40(?![0-9a-f]+;))|commat);?/i.exec(value.slice(index));
   if (match === null) {
     return 0;
   }
@@ -117,6 +117,7 @@ function contactSpans(visual: string, marks: readonly Mark[]): readonly Span[] {
     /[a-z0-9._%+-]+\s*(?:@|\(at\)|\[at\]|\bat\b)\s*[a-z0-9-]+(?:\s*(?:\.|\(dot\)|\[dot\]|\bdot\b)\s*[a-z0-9-]+)+/gi,
     /\+\d{1,3}(?:[\s().-]*\d){6,14}/g,
     /\(\d{1,4}\)\s*\d{1,4}(?:[ .-]\d{2,4})+/g,
+    /\(0\d{1,4}\)\s*\d{6,8}(?![0-9])/g,
     /\b0\d{1,4}(?:[ .-]\d{1,4}){1,3}\b/g,
     /\b0\d{9,10}\b/g,
   ];
@@ -166,7 +167,28 @@ function stripHidden(value: string): string {
   return output;
 }
 
+const foldedCodePoints = new Map<number, string>([
+  [0x2010, "-"],
+  [0x2011, "-"],
+  [0x2012, "-"],
+  [0x2013, "-"],
+  [0x2014, "-"],
+  [0x2015, "-"],
+  [0x2212, "-"],
+  [0x30fc, "-"],
+  [0xff70, "-"],
+  [0xfe63, "-"],
+  [0x30fb, "."],
+  [0xff65, "."],
+  [0xfe6b, "@"],
+  [0x3000, " "],
+]);
+
 function foldChar(code: number): string {
+  const folded = foldedCodePoints.get(code);
+  if (folded !== undefined) {
+    return folded;
+  }
   if (code >= 0xff01 && code <= 0xff5e) {
     return String.fromCodePoint(code - 0xff00 + 0x20);
   }

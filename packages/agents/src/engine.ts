@@ -246,6 +246,9 @@ function createSide(input: SideInput): MockSide {
       }
       if (read.message.type === "Proposal") {
         show(read.message.note);
+        for (const credential of read.message.credentials) {
+          show(credential);
+        }
       }
       if (read.message.type === "CounterProposal") {
         show(read.message.note);

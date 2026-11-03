@@ -306,6 +306,71 @@ describe("mock poster and worker", () => {
     expect(redactFreeText("foo [at] example [dot] com")).toBe("[contact-removed]");
   });
 
+  it("redacts unicode dashes, middle dots, tight parentheses, and loose entities", () => {
+    expect(redactFreeText("090‐1234‐5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090–1234–5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090−1234−5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090ー1234ー5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090・1234・5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090･1234･5678")).toBe("[contact-removed]");
+    expect(redactFreeText("(090)12345678")).toBe("[contact-removed]");
+    expect(redactFreeText("（090）12345678")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&#x40example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&#64example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&amp;#64;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&amp;amp;#x40;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&commat;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo﹫example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("電話は 090‐1234‐5678 まで")).toBe("電話は [contact-removed] まで");
+  });
+
+  it("keeps entities that are not an at sign and text that only looks close", () => {
+    expect(redactFreeText("&#640;")).toBe("&#640;");
+    expect(redactFreeText("&#x400;")).toBe("&#x400;");
+    expect(redactFreeText("(1)200000")).toBe("(1)200000");
+    expect(redactFreeText("2026ー11ー20")).toBe("2026ー11ー20");
+    expect(redactFreeText("デザイン・コーディング")).toBe("デザイン・コーディング");
+    expect(redactFreeText("金額は180000円。期限は2026-11-20です。")).toBe("金額は180000円。期限は2026-11-20です。");
+  });
+
+  it("redacts contacts in proposal credentials before a human sees them", async () => {
+    const clock = clockAt(sampleNow);
+    const board = createTestBoard(clock);
+    const poster = createPoster({
+      board,
+      clock,
+      job: sampleJob,
+      bound: samplePosterBound,
+      human: "approve",
+    });
+    await poster.step();
+    const proposal = buildProposal({
+      job: sampleJob,
+      price: sampleJob.budgetMax,
+      prevHash: "m-0001",
+      note: "",
+    });
+    const published = await board.publish({
+      id: "m-9000",
+      issuer: "did:example:worker",
+      kind: negotiationKind,
+      tags: [[jobTag, sampleJob.jobId]],
+      createdAt: sampleNow,
+      expiresAt: sampleJob.expiresAt,
+      sig: "unverified-placeholder",
+      body: negotiationRecord(
+        { ...proposal, credentials: ["実績は (090)12345678 か foo&amp;#64;example.com へ"] },
+        mockExtensionsHeader,
+      ),
+    });
+    expect(published.ok).toBe(true);
+    await poster.step();
+    const shown = poster.shownFreeText().join("\n");
+    expect(shown.includes("12345678")).toBe(false);
+    expect(shown.includes("example.com")).toBe(false);
+    expect(shown.includes("実績は [contact-removed] か [contact-removed] へ")).toBe(true);
+  });
+
   it("leaves prices, dates, and budget numbers in place", () => {
     expect(redactFreeText("200000")).toBe("200000");
     expect(redactFreeText("150000")).toBe("150000");
