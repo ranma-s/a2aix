@@ -69,6 +69,11 @@
         "@ix/protocol-core"
       ]
     },
+    "@ix/verify": {
+      "dir": "packages/verify",
+      "layer": "core",
+      "dependsOn": ["@ix/a2a-ext-negotiation", "@ix/distribution"]
+    },
     "@ix/ledger": {
       "dir": "packages/ledger",
       "layer": "app",
@@ -82,7 +87,14 @@
     "@ix/conformance": {
       "dir": "packages/conformance",
       "layer": "suite",
-      "dependsOn": ["@ix/agents", "@ix/distribution", "@ix/node", "@ix/protocol-core"]
+      "dependsOn": [
+        "@ix/agents",
+        "@ix/approval-app",
+        "@ix/distribution",
+        "@ix/node",
+        "@ix/protocol-core",
+        "@ix/verify"
+      ]
     },
     "@ix/adapters": {
       "dir": "packages/adapters",

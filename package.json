@@ -20,6 +20,7 @@
   "devDependencies": {
     "@ix/adapters": "workspace:*",
     "@ix/agents": "workspace:*",
+    "@ix/verify": "workspace:*",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.14.0",
     "globals": "^17.14.0",

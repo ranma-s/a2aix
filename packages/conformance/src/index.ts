@@ -1,6 +1,8 @@
 import { extensionUris } from "@ix/protocol-core";
 import type { JobBoard } from "@ix/agents";
+import { injectionCases } from "@ix/agents";
 import { proveDeadline, proveMandate, proveMessages } from "./run.js";
+import { runInjectionSuite } from "./injection.js";
 
 export const conformanceStatus = "partial" as const;
 
@@ -50,7 +52,8 @@ export type ConformanceLimit =
   | "not_run"
   | "structure_only_signature_unverified"
   | "local_numeric_bound_signature_unverified"
-  | "injected_clock";
+  | "injected_clock"
+  | "free_text_ignored_signature_unverified";
 
 export type ConformanceResult = {
   readonly id: ConformanceItemId;
@@ -58,9 +61,13 @@ export type ConformanceResult = {
   readonly titleJa: string;
   readonly status: "pending" | "pass";
   readonly limit: ConformanceLimit;
+  readonly coveredCases: readonly string[];
   readonly noteEn: string;
   readonly noteJa: string;
 };
+
+export { runInjectionSuite } from "./injection.js";
+export type { InjectionObservation, InjectionSuiteResult } from "./injection.js";
 
 export async function runConformance(
   openBoard: (now: string) => JobBoard,
@@ -68,6 +75,7 @@ export async function runConformance(
   const messages = await proveMessages(openBoard);
   const mandate = await proveMandate(openBoard);
   await proveDeadline(openBoard);
+  const injection = await runInjectionSuite(openBoard);
   if (
     messages.fuzzRejected < 13 ||
     !messages.handAccepted ||
@@ -79,7 +87,13 @@ export async function runConformance(
     !mandate.oneBelowFloor ||
     !mandate.posterBlocked250000 ||
     !mandate.workerBlocked1 ||
-    !mandate.laterRoundBlocked
+    !mandate.laterRoundBlocked ||
+    !sameCases(injection.observations.map((item) => item.id)) ||
+    injection.verify.schema !== "pass" ||
+    injection.verify.replay !== "pass" ||
+    injection.verify.bounds !== "pass" ||
+    injection.verify.deadlines !== "pass" ||
+    injection.verify.phase !== "agreed"
   ) {
     throw new Error("conformance evidence does not support the recorded passes");
   }
@@ -122,10 +136,12 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
         "渡した時計で、期限ちょうどには交渉のメッセージを出さず、期限前には出します。署名は見ていません。",
       );
     case "ignores-instructions-in-free-text":
-      return pending(
+      return pass(
         item,
-        "The phase machine does not read note or comment, and one contradictory note is covered by a unit test. The spec's prompt-injection suite is not claimed.",
-        "段階機械は自由文を読みません。矛盾したメモの単位試験はあります。仕様のプロンプトインジェクション一式は、まだ合格にしていません。",
+        "free_text_ignored_signature_unverified",
+        `Executed against the mock agents and the relay: ${caseList()}. Structured fields stayed in force. Signatures, JCS, JWS, and prevHash are not checked.`,
+        `模試と中継に対して実行した試験: ${caseList()}。型の項目はそのままです。署名は見ていません。`,
+        injectionCases.map((entry) => entry.id),
       );
   }
 }
@@ -141,6 +157,7 @@ function pending(
     titleJa: item.titleJa,
     status: "pending",
     limit: "not_run",
+    coveredCases: [],
     noteEn,
     noteJa,
   };
@@ -151,6 +168,7 @@ function pass(
   limit: Exclude<ConformanceLimit, "not_run">,
   noteEn: string,
   noteJa: string,
+  coveredCases: readonly string[] = [],
 ): ConformanceResult {
   return {
     id: item.id,
@@ -158,7 +176,25 @@ function pass(
     titleJa: item.titleJa,
     status: "pass",
     limit,
+    coveredCases,
     noteEn,
     noteJa,
   };
+}
+
+function caseList(): string {
+  return injectionCases.map((entry) => entry.id).join(", ");
+}
+
+function sameCases(ids: readonly string[]): boolean {
+  if (ids.length !== injectionCases.length) {
+    return false;
+  }
+  for (let index = 0; index < injectionCases.length; index += 1) {
+    const expected = injectionCases[index];
+    if (expected === undefined || ids[index] !== expected.id) {
+      return false;
+    }
+  }
+  return true;
 }

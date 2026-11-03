@@ -51,5 +51,8 @@ export type WorkerBound = {
 export type SideSnapshot = {
   readonly phase: "idle" | "negotiating" | "awaiting_approval" | "agreed" | "no_deal";
   readonly reason: NoDealReason | null;
+  readonly round: number;
+  readonly maxRoundTrips: number;
+  readonly shownFreeText: readonly string[];
   readonly refusals: readonly Refusal[];
 };

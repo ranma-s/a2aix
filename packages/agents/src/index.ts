@@ -13,6 +13,8 @@ export {
 export type { NegotiationMessage, NegotiationRead } from "./codec.js";
 export { createPoster, createWorker, runPosterWorker } from "./engine.js";
 export type { ExchangeReport, MockSide } from "./engine.js";
+export { injectionCases, injectionText } from "./injection.js";
+export type { InjectionCaseId } from "./injection.js";
 export {
   credentialPlaceholder,
   jobKind,
@@ -28,5 +30,6 @@ export {
 } from "./kinds.js";
 export { clockAt, sampleCard, sampleJob, sampleJobWith, sampleNow, samplePosterBound, sampleProposalNote, sampleWorkerBound } from "./sample.js";
 export { isRfc3339 } from "./time.js";
+export { redactFreeText } from "./redact.js";
 export type { MockJob, PosterBound, Refusal, RefusalReason, SideSnapshot, WorkerBound } from "./types.js";
 export { refusalReasons } from "./types.js";
