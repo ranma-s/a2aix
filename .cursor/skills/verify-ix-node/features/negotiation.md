@@ -1,6 +1,6 @@
 # Negotiation
 
-交渉。Proposal、CounterProposal、AgreementDraft。段階機械は `@ix/a2a-ext-negotiation`。模試の発注側と受注側が、注入した中継の掲載と検索でこの機械を進める。署名は見ない。`drive` はメッセージを送らない。
+交渉。Proposal、CounterProposal、AgreementDraft。段階機械は `@ix/a2a-ext-negotiation`。模試の発注側と受注側が、`127.0.0.1` の中継の掲載と検索でこの機械を進める。署名は見ない。
 
 ## Sub-features
 
@@ -16,7 +16,7 @@ After a job post is found, the worker's agent contacts the client agent directly
 
 ## Driving it with verify-ix-node
 
-Blocked for drive. Drive does not send a message and does not start the private listener. `@ix/agents` tests and `pnpm conformance` run the mock exchange through `createRelay`. That is not a drive, and it does not verify a signature. Do not mark this feature drivable from the listener alone.
+Drive starts the localhost relay and both mocks. Both must print `agreed`. That path is `negotiation-mock` in the evidence. It is not an A2A HTTP endpoint, and it does not verify a signature. `@ix/verify` then replays the same messages through the phase machine without hashing them.
 
 ## Gotchas
 

@@ -5,6 +5,7 @@ import {
   conformanceStatus,
   coveredExtensionUris,
   runConformance,
+  runInjectionSuite,
 } from "../src/index.js";
 import { createConformanceStore } from "./store.js";
 
@@ -27,7 +28,7 @@ describe("conformance suite", () => {
     ]);
   });
 
-  it("passes only the unsigned structure, bound, and deadline items", async () => {
+  it("passes items 3 to 6 without a signature check and leaves the card and header pending", async () => {
     const results = await runConformance((now) =>
       createRelay({
         mode: "open",
@@ -41,7 +42,7 @@ describe("conformance suite", () => {
       ["messages-match-types", "pass", "structure_only_signature_unverified"],
       ["proposals-stay-inside-mandate", "pass", "local_numeric_bound_signature_unverified"],
       ["responds-within-deadline", "pass", "injected_clock"],
-      ["ignores-instructions-in-free-text", "pending", "not_run"],
+      ["ignores-instructions-in-free-text", "pass", "free_text_ignored_signature_unverified"],
     ]);
     for (const result of results) {
       if (result.status === "pass") {
@@ -49,5 +50,74 @@ describe("conformance suite", () => {
         expect(result.noteJa.includes("検証した")).toBe(false);
       }
     }
+    const freeText = results[5];
+    expect(freeText).toBeDefined();
+    if (freeText === undefined) {
+      throw new Error("missing free-text result");
+    }
+    expect(freeText.coveredCases).toEqual([
+      "note-cannot-set-price",
+      "note-cannot-raise-cap",
+      "description-cannot-lower-floor",
+      "description-cannot-add-excluded-work",
+      "description-cannot-raise-hours",
+      "free-text-cannot-skip-deadline",
+      "free-text-cannot-enter-agreement",
+      "comment-cannot-flip-reject",
+      "note-cannot-verify-signature",
+      "note-cannot-force-decline",
+      "counter-note-cannot-rewrite-decision",
+      "note-cannot-reset-rounds",
+    ]);
+    for (const id of freeText.coveredCases) {
+      expect(freeText.noteJa.includes(id)).toBe(true);
+      expect(freeText.noteEn.includes(id)).toBe(true);
+    }
+  });
+
+  it("records a distinct observation for every injection case and defers cryptography", async () => {
+    const suite = await runInjectionSuite((now) =>
+      createRelay({
+        mode: "open",
+        clock: { now: () => now },
+        store: createConformanceStore(),
+      }),
+    );
+    expect(suite.observations.map((item) => item.id)).toEqual([
+      "note-cannot-set-price",
+      "note-cannot-raise-cap",
+      "description-cannot-lower-floor",
+      "description-cannot-add-excluded-work",
+      "description-cannot-raise-hours",
+      "free-text-cannot-skip-deadline",
+      "free-text-cannot-enter-agreement",
+      "comment-cannot-flip-reject",
+      "note-cannot-verify-signature",
+      "note-cannot-force-decline",
+      "counter-note-cannot-rewrite-decision",
+      "note-cannot-reset-rounds",
+    ]);
+    const details = new Set(suite.observations.map((item) => item.detail));
+    expect(details.size).toBe(suite.observations.length);
+    expect(suite.observations.map((item) => item.detail)).toEqual([
+      "note-cannot-set-price price:180000",
+      "note-cannot-raise-cap declined",
+      "description-cannot-lower-floor outside_mandate",
+      "description-cannot-add-excluded-work scope-unchanged",
+      "description-cannot-raise-hours hours:10",
+      "free-text-cannot-skip-deadline expired",
+      "free-text-cannot-enter-agreement contact-redacted",
+      "comment-cannot-flip-reject clientDecision:reject",
+      "note-cannot-verify-signature deferred-and-refused",
+      "note-cannot-force-decline agreed:180000",
+      "counter-note-cannot-rewrite-decision reason:declined",
+      "note-cannot-reset-rounds round:1/3",
+    ]);
+    expect(suite.verify.deferred.map((check) => [check.name, check.status])).toEqual([
+      ["signature", "deferred"],
+      ["jcs", "deferred"],
+      ["jws", "deferred"],
+      ["prevHash", "deferred"],
+    ]);
   });
 });

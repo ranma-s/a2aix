@@ -20,6 +20,7 @@ import {
   samplePosterBound,
   sampleProposalNote,
   sampleWorkerBound,
+  redactFreeText,
   workerAllows,
 } from "../src/index.js";
 import { createTestBoard } from "./board.js";
@@ -275,5 +276,12 @@ describe("mock poster and worker", () => {
     });
     expect(report.poster.phase).not.toBe("agreed");
     expect(report.worker.phase).not.toBe("agreed");
+  });
+
+  it("redacts contact details in free text and leaves ordinary words in place", () => {
+    expect(redactFreeText("連絡先は tanaka@example.com と 090-1234-5678 と +81-90-1234-5678")).toBe(
+      "連絡先は [contact-removed] と [contact-removed] と [contact-removed]",
+    );
+    expect(redactFreeText("金額は180000円。期限は2026-11-20です。")).toBe("金額は180000円。期限は2026-11-20です。");
   });
 });

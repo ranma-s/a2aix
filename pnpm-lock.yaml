@@ -17,6 +17,9 @@ importers:
       '@ix/agents':
         specifier: workspace:*
         version: link:packages/agents
+      '@ix/verify':
+        specifier: workspace:*
+        version: link:packages/verify
       eslint:
         specifier: ^10.14.0
         version: 10.14.0
@@ -109,6 +112,9 @@ importers:
       '@ix/agents':
         specifier: workspace:*
         version: link:../agents
+      '@ix/approval-app':
+        specifier: workspace:*
+        version: link:../approval-app
       '@ix/distribution':
         specifier: workspace:*
         version: link:../distribution
@@ -118,6 +124,9 @@ importers:
       '@ix/protocol-core':
         specifier: workspace:*
         version: link:../protocol-core
+      '@ix/verify':
+        specifier: workspace:*
+        version: link:../verify
 
   packages/distribution: {}
 
@@ -143,6 +152,15 @@ importers:
         version: link:../distribution
 
   packages/protocol-core: {}
+
+  packages/verify:
+    dependencies:
+      '@ix/a2a-ext-negotiation':
+        specifier: workspace:*
+        version: link:../a2a-ext-negotiation
+      '@ix/distribution':
+        specifier: workspace:*
+        version: link:../distribution
 
 packages:
 

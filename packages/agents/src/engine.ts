@@ -11,6 +11,7 @@ import { isDue } from "@ix/distribution";
 import type { JsonObject, StoredEvent } from "@ix/distribution";
 import type { JobBoard } from "./board.js";
 import { posterAllows, sameMoney, workerAllows } from "./bounds.js";
+import { redactFreeText } from "./redact.js";
 import {
   buildApproval,
   buildCounter,
@@ -39,6 +40,7 @@ export type MockSide = {
   readonly party: Party;
   readonly session: () => NegotiationSession;
   readonly refusals: () => readonly Refusal[];
+  readonly shownFreeText: () => readonly string[];
   readonly step: () => Promise<void>;
 };
 
@@ -106,6 +108,9 @@ export async function runPosterWorker(input: {
     readonly client: HumanDecision;
     readonly worker: HumanDecision;
   };
+  readonly proposalNote?: string;
+  readonly clientComment?: string;
+  readonly workerComment?: string;
 }): Promise<ExchangeReport> {
   const poster = createPoster({
     board: input.board,
@@ -113,6 +118,7 @@ export async function runPosterWorker(input: {
     job: input.job,
     bound: input.posterBound,
     human: input.humans.client,
+    humanComment: input.clientComment ?? "",
   });
   const worker = createWorker({
     board: input.board,
@@ -120,6 +126,8 @@ export async function runPosterWorker(input: {
     job: input.job,
     bound: input.workerBound,
     human: input.humans.worker,
+    humanComment: input.workerComment ?? "",
+    proposalNote: input.proposalNote ?? sampleProposalNote,
   });
   for (let index = 0; index < maxExchangeSteps; index += 1) {
     await poster.step();
@@ -156,6 +164,7 @@ function createSide(input: SideInput): MockSide {
     expiresAt: input.job.expiresAt,
   });
   const refusals: Refusal[] = [];
+  const shownFreeText: string[] = [];
   const seen = new Set<string>();
   let posted: MockJob | undefined;
   let jobEventId: string | undefined;
@@ -171,6 +180,13 @@ function createSide(input: SideInput): MockSide {
 
   function remember(reason: Refusal["reason"], detail: string): void {
     refusals.push({ reason, detail });
+  }
+
+  function show(value: string): void {
+    const redacted = redactFreeText(value);
+    if (redacted.length > 0) {
+      shownFreeText.push(redacted);
+    }
   }
 
   async function publishBody(kind: string, expiresAt: string, body: JsonObject): Promise<boolean> {
@@ -205,6 +221,8 @@ function createSide(input: SideInput): MockSide {
         if (posted === undefined) {
           posted = job;
           jobEventId = event.id;
+          show(job.title);
+          show(job.description);
         }
         continue;
       }
@@ -228,10 +246,17 @@ function createSide(input: SideInput): MockSide {
       lastMessageId = event.id;
       if (read.message.type === "Proposal") {
         latest = read.message.price;
+        show(read.message.note);
+      }
+      if (read.message.type === "CounterProposal") {
+        show(read.message.note);
       }
       if (read.message.type === "AgreementDraft") {
         latest = read.message.price;
         draftHash = read.message.transcriptHash;
+      }
+      if (read.message.type === "ApprovalDecision") {
+        show(read.message.comment);
       }
     }
   }
@@ -422,6 +447,9 @@ function createSide(input: SideInput): MockSide {
     refusals() {
       return refusals.slice();
     },
+    shownFreeText() {
+      return shownFreeText.slice();
+    },
     step,
   };
 }
@@ -522,6 +550,9 @@ function snapshot(side: MockSide): SideSnapshot {
   return {
     phase: session.phase,
     reason: session.reason,
+    round: session.round,
+    maxRoundTrips: session.maxRoundTrips,
+    shownFreeText: side.shownFreeText(),
     refusals: side.refusals(),
   };
 }

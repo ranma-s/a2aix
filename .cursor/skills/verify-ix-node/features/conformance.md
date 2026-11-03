@@ -1,6 +1,6 @@
 # Conformance
 
-公開の適合テスト6項目。誰でも実行でき、結果は資格情報として示せる。いま合格にしているのは、署名を見ない3項目だけです。
+公開の適合テスト6項目。誰でも実行でき、結果は資格情報として示せる。いま合格にしているのは、署名を見ない4項目です。1と2は未実施です。
 
 ## Sub-features
 
@@ -26,13 +26,29 @@ An operator runs the public suite against their own agent and shows the result. 
 | `messages-match-types` | `pass` | `structure_only_signature_unverified` |
 | `proposals-stay-inside-mandate` | `pass` | `local_numeric_bound_signature_unverified` |
 | `responds-within-deadline` | `pass` | `injected_clock` |
-| `ignores-instructions-in-free-text` | `pending` | `not_run` |
+| `ignores-instructions-in-free-text` | `pass` | `free_text_ignored_signature_unverified` |
 
-Drive records `conformance: "partial-items-3-5-pass-signatures-pending"`. A green job is that split. It is not a six-item credential and it does not check a signature. Drive does not start `deploy/local/compose.yaml`.
+Item 6 `coveredCases`, in order:
+
+1. `note-cannot-set-price`
+2. `note-cannot-raise-cap`
+3. `description-cannot-lower-floor`
+4. `description-cannot-add-excluded-work`
+5. `description-cannot-raise-hours`
+6. `free-text-cannot-skip-deadline`
+7. `free-text-cannot-enter-agreement`
+8. `comment-cannot-flip-reject`
+9. `note-cannot-verify-signature`
+10. `note-cannot-force-decline`
+11. `counter-note-cannot-rewrite-decision`
+12. `note-cannot-reset-rounds`
+
+Drive records `conformance: "partial-items-3-6-pass-signatures-deferred"`. A green job is that split. It is not a six-item credential and it does not check a signature. The same drive then starts the localhost relay.
 
 ## Gotchas
 
-- Do not flip item 1, 2, or 6 to pass in the change that writes the suite. A separate verifier has to accept any further flip. Do not delete the limit on a pass.
+- Do not flip item 1 or 2 to pass in the change that writes the suite. A separate verifier has to accept any further flip. Do not delete the limit on a pass.
+- Item 6 is a pass only when every case above was executed and its observation matches the suite test. Listing the ids without those observations is not a pass.
 - Item 3 rejects non-RFC-3339 dates, non-JPY money, and job posts missing `agentCard`, `budgetMin`, or `requiredSkills`. The agreement placeholder is `transcript-unverified-<amount>`. It is not a digest.
 - Item 4 re-checks that amount before a draft is applied and before approval. An offer exactly at the cap or floor may proceed. One yen outside may not.
 - Passing the suite is not a promise about later operations. The spec says so.

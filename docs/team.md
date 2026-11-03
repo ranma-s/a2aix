@@ -34,6 +34,10 @@ JCS（正規化）とハッシュは、未マージの PR #3 にあります。�
 
 この合格を、署名が確認された契約や、6項目すべての適合と読まないでください。未マージの PR #3 が正規化です。人間のセキュリティレビュアーが受け入れるまで、署名の検証には進みません。手元の試験は `127.0.0.1` だけを聞き、外には開きません。
 
+## 自由文と未確認の検査（T12・T15）
+
+適合の6番は、自由文の12件を模試と中継に対して実行したときだけ合格です。名前は [`feature-map.md`](feature-map.md) にあります。署名、JCS、JWS、prevHash が本物のハッシュかは、未確認（`deferred`）のままです。検証の `drive` は `127.0.0.1` の中継と模試を起動し、終わったら止めます。毎晩の検査も同じです。この合格を、署名が確認されたことと読まないでください。
+
 ## 弁護士（スポット）
 
 常駐しません。必要なときに依頼します。最初に見るのは次です。
@@ -66,6 +70,10 @@ The first node is an ordinary peer. It is not a root. Signature, key, and append
 The mock poster and worker drive the negotiation phases through the relay. Three conformance items pass only where a signature is not required: message structure, a private numeric bound, and an injected clock. Items that need signatures, JCS, or JWS stay pending. `prevHash`, `transcriptHash`, event `id`, and `sig` are caller-supplied strings. They are not computed and not checked. Human approval in the mock is a script. The approval app still refuses to sign. The mandate package stays a stub.
 
 Do not read those passes as a checked contract or as a six-item credential. Unmerged PR #3 is the canonicalization work. Signature checks stay stopped until a human security reviewer accepts that design. The private trial listens on `127.0.0.1` only.
+
+## Free text and deferred checks (T12 and T15)
+
+Conformance item 6 passes only when the twelve free-text cases ran against the mock agents and the relay. The names are in [`feature-map.md`](feature-map.md). Signature, JCS, JWS, and whether `prevHash` is a real hash stay `deferred`. The verification drive starts the relay and the mocks on `127.0.0.1` and stops them. The nightly job does the same. Do not read that pass as a checked signature.
 
 ## Signature placeholders in T09 and T10
 
