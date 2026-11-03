@@ -1,10 +1,10 @@
 # Negotiation
 
-交渉。Proposal、CounterProposal、AgreementDraft。段階機械は `@ix/a2a-ext-negotiation` の純粋なロジック。通信は未実装。
+交渉。Proposal、CounterProposal、AgreementDraft。段階機械は `@ix/a2a-ext-negotiation`。模試の発注側と受注側が、注入した中継の掲載と検索でこの機械を進める。署名は見ない。`drive` はメッセージを送らない。
 
 ## Sub-features
 
-- A worker agent sends a Proposal to the client agent's endpoint on the job post.
+- A mock worker publishes a Proposal on the injected relay. The client mock reads it back with query. This is not an A2A HTTP endpoint.
 - Either agent sends a CounterProposal: `counter`, `accept`, or `decline`.
 - The client agent builds an AgreementDraft. The worker agent recomputes it in the spec. This revision stores the draft it is given and does not recompute a hash.
 - Phase lives in metadata, not in a new Task state.
@@ -16,7 +16,7 @@ After a job post is found, the worker's agent contacts the client agent directly
 
 ## Driving it with verify-ix-node
 
-Blocked. Drive does not send a message. Unit tests cover the transition table. That is not a drive. Do not mark this feature drivable: there is still no message transport.
+Blocked for drive. Drive does not send a message and does not start the private listener. `@ix/agents` tests and `pnpm conformance` run the mock exchange through `createRelay`. That is not a drive, and it does not verify a signature. Do not mark this feature drivable from the listener alone.
 
 ## Gotchas
 

@@ -20,28 +20,32 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 
 ## いまあるもの / What is here
 
-土台に、交渉の段階を決めるルールと、依頼票を手元の記憶で配る仕組みを足してあります。まだ通信はしません。署名も確認しません。段階の説明は [`docs/negotiation-states.md`](docs/negotiation-states.md)、配り方は [`docs/distribution.md`](docs/distribution.md) です。
+土台に、交渉の段階、依頼票の手元の中継、そして模試の発注側・受注側を足してあります。署名は確認しません。段階は [`docs/negotiation-states.md`](docs/negotiation-states.md)、配り方は [`docs/distribution.md`](docs/distribution.md)、手元だけの試し方は [`docs/local-trial.md`](docs/local-trial.md) です。
 
 - 交渉の段階機械。提案、対案、合意案、人間の承認・却下、3往復、期限を扱います。時計は外から渡します。署名の欄は後で確認するための空席で、中身は見ていません。
 - 拡張の名乗り。`A2A-Extensions` に、4つの拡張のうち相手と自分の両方が持つものだけを返します。交渉は、委任・承認・履歴が揃ったときだけ有効です。違う版は、別の版で代わりに受けません。
-- 依頼票の掲載・検索・購読。タグ、種類、期間で探します。最初の置き場はメモリです。開いたノードだけが掲載を受けます。`id` と署名欄は渡された文字列のままで、確認しません。ポートは開きません。
+- 依頼票の掲載・検索・購読。タグ、種類、期間で探します。最初の置き場はメモリです。開いたノードだけが掲載を受けます。`id` と署名欄は渡された文字列のままで、確認しません。パッケージ自体はポートを開きません。
+- 模試の発注側と受注側。中継に依頼票と交渉メッセージを載せ、段階機械を進めます。金額が自分の上限・下限の外なら出しません。期限ちょうどには返事をしません。人の承認は台本です。
+- 手元だけの試験。`deploy/local/compose.yaml` は `127.0.0.1` だけを聞き、ポートを公開しません。
 - pnpm の TypeScript モノレポ。コア、アプリ、アダプタ、適合スイートをパッケージに分けてあります。
 - 依存の向きを CI で検査します。コアからアダプタへは戻れません。
 - JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。中身は未実装で、呼ぶと失敗します。テストベクトルは TODO です。
 - 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。
-- 適合テスト6項目の置き場所はあります。結果はすべて未実施（`pending`）です。
+- 適合テスト6項目のうち、署名なしで確かめられる3項目だけを、範囲を書いたうえで合格にしています。残り3項目は未実施です。緑でも、6項目すべてに合格したことにはなりません。
 - 検査を破る見本が `fixtures/guardrails/` にあります。普通のビルドには入れません。`pnpm guardrails` は、見本が失敗することと、許される書き方は成功することを確かめます。
 
-This revision is the foundation, the negotiation phase rules, and an in-memory way to pass job posts around. Nothing speaks on the network yet, and signatures are not checked. The plain-language maps are [`docs/negotiation-states.md`](docs/negotiation-states.md) and [`docs/distribution.md`](docs/distribution.md).
+This revision is the foundation, the negotiation phase rules, an in-memory relay, and mock poster and worker agents. Signatures are not checked. The plain-language maps are [`docs/negotiation-states.md`](docs/negotiation-states.md), [`docs/distribution.md`](docs/distribution.md), and [`docs/local-trial.md`](docs/local-trial.md).
 
 - A negotiation phase machine: proposal, counter-proposal, agreement draft, human approve/reject, a 3-round cap, and deadlines. The clock is injected. The signature field is a placeholder and is not verified.
 - Extension activation. `A2A-Extensions` returns only the profile URIs both sides listed. Negotiation turns on only together with mandate, approval, and transcript. A different version is not answered with this one.
-- In-process publish, query, and subscribe by tag, kind, and time. The first store is memory. Only an open node accepts publish. `id` and `sig` are stored as given and are not checked. No port is opened.
+- In-process publish, query, and subscribe by tag, kind, and time. The first store is memory. Only an open node accepts publish. `id` and `sig` are stored as given and are not checked. The package opens no port.
+- Mock poster and worker agents. They put the job and the negotiation messages on a relay and apply the phase machine. An offer outside their own numeric bound is not sent. Nothing is sent at the deadline. Human approval is a script.
+- A private trial. `deploy/local/compose.yaml` binds `127.0.0.1` and publishes no ports.
 - A pnpm TypeScript monorepo split into core, app, adapter, and conformance packages.
 - CI rejects a dependency that points the wrong way. Core cannot import adapters.
 - JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. It throws. Test vectors are TODO.
 - Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them.
-- The six conformance items have a home. Every result is `pending`.
+- Three of the six conformance items pass inside a recorded limit that does not check signatures. The other three stay `pending`. A green run is not a full pass.
 - Violating dummies live in `fixtures/guardrails/` and stay out of the normal build. `pnpm guardrails` requires those dummies to fail and the allowed forms to pass.
 
 役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。
@@ -66,11 +70,11 @@ pnpm check
 | `pnpm boundaries` | 依存の向き、コメント禁止（ライセンスヘッダを除く）、空の `catch`、無期限ループ、暗号ライブラリ、秘密鍵。検査自体の自己テストも含みます。 |
 | `pnpm guardrails` | 禁止事項の見本が失敗し、許される書き方は成功する。`any`、危険な型変換、コメント、コアからアダプタまたはアプリへの依存。 |
 | `pnpm test` | ユニットテスト。適合スイートは含みません。 |
-| `pnpm conformance` | 適合テスト6項目の仮実行。すべて `pending` であることを確かめます。 |
+| `pnpm conformance` | 適合テスト6項目。3項目は範囲つきで合格、3項目は `pending`。署名の確認ではありません。 |
 
 CI は同じ6つを、別々のジョブで実行します。
 
-**適合テストのジョブが緑でも、6項目は未実施です。** 緑は「仮の一覧がまだ未実施のまま」という意味です。
+**適合テストのジョブが緑でも、6項目すべてに合格したことにはなりません。** 合格は3項目だけで、署名は見ていません。残り3項目は未実施です。
 
 エージェントが同じ確認をする入口は次です。
 
@@ -80,7 +84,7 @@ node scripts/verify-ix-node.mjs drive
 node scripts/verify-ix-node.mjs cleanup
 ```
 
-`drive` は `artifacts/verify/` に証拠を書きます。`cleanup` はそのディレクトリを消しません。`artifacts/` は git の対象外です。ノードのプロセスは、まだ起動しません。
+`drive` は `artifacts/verify/` に証拠を書きます。`cleanup` はそのディレクトリを消しません。`artifacts/` は git の対象外です。`drive` は手元の試験を起動しません。
 
 ## レイアウト / Layout
 
@@ -92,16 +96,18 @@ packages/protocol-core        拡張 URI 4つと A2A-Extensions
 packages/distribution          依頼票の形とタグ検索。署名は見ない
 packages/log                   透明性ログのスタブ
 packages/a2a-ext-*             交渉の段階機械。委任範囲・承認・履歴はスタブ
-packages/node                  プロセス内の中継。ポートは開かない
+packages/node                  プロセス内の中継。パッケージはポートを開かない
+packages/agents                模試の発注側と受注側。署名は見ない
 packages/ledger                台帳のスタブ
 packages/approval-app          承認アプリのスタブ。署名しない
 packages/adapters              メモリの置き場。他から依存されない
-packages/conformance           適合テストの仮実装
-deploy/                        設定例だけ
+packages/conformance           適合テスト。3項目は範囲つき合格、3項目は未実施
+deploy/                        設定例と、127.0.0.1 だけの試験
 vectors/                       固定ベクトルの置き場所。中身はまだ無い
 docs/spec/                     仕様（CC BY 4.0）
 docs/negotiation-states.md     交渉の段階。非エンジニア向け
 docs/distribution.md           依頼票の配り方。非エンジニア向け
+docs/local-trial.md            手元だけの試験。非エンジニア向け
 docs/team.md                   チーム
 .cursor/skills/verify-ix-node/ 検証手順のスタブ
 .cursor/settings.json          pstack を有効にする

@@ -60,6 +60,15 @@
       "layer": "app",
       "dependsOn": ["@ix/config", "@ix/distribution"]
     },
+    "@ix/agents": {
+      "dir": "packages/agents",
+      "layer": "app",
+      "dependsOn": [
+        "@ix/a2a-ext-negotiation",
+        "@ix/distribution",
+        "@ix/protocol-core"
+      ]
+    },
     "@ix/ledger": {
       "dir": "packages/ledger",
       "layer": "app",
@@ -73,12 +82,12 @@
     "@ix/conformance": {
       "dir": "packages/conformance",
       "layer": "suite",
-      "dependsOn": ["@ix/protocol-core"]
+      "dependsOn": ["@ix/agents", "@ix/distribution", "@ix/node", "@ix/protocol-core"]
     },
     "@ix/adapters": {
       "dir": "packages/adapters",
       "layer": "adapter",
-      "dependsOn": ["@ix/config", "@ix/distribution", "@ix/node"]
+      "dependsOn": ["@ix/agents", "@ix/config", "@ix/distribution", "@ix/node"]
     }
   }
 }

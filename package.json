@@ -18,9 +18,12 @@
     "verify": "node scripts/verify-ix-node.mjs drive"
   },
   "devDependencies": {
+    "@ix/adapters": "workspace:*",
+    "@ix/agents": "workspace:*",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.14.0",
     "globals": "^17.14.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
     "vitest": "^5.0.5"

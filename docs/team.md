@@ -28,6 +28,12 @@ Cursor のクラウドエージェントです。チケット単位で実装し�
 
 JCS（正規化）とハッシュは、未マージの PR #3 にあります。人間のセキュリティレビュアーが受け入れるまで、署名の検証、鍵、JWS には進みません。この空席を、確認済みの署名と読まないでください。
 
+## 署名の空席（T11・T14）
+
+模試の発注側と受注側は、中継を通して交渉の段階を進めます。適合テストのうち3項目は、署名を見ない範囲だけで合格にしています。メッセージの形、自分の数値の上限・下限、渡した時計での期限です。署名、JCS、JWS が要る項目は未実施のままです。`prevHash` と `transcriptHash` とイベントの `id` と `sig` は、呼び出し側が渡した文字列で、計算も確認もしていません。人の承認は台本です。承認アプリは、今も署名を拒否します。委任の拡張パッケージはスタブのままです。
+
+この合格を、署名が確認された契約や、6項目すべての適合と読まないでください。未マージの PR #3 が正規化です。人間のセキュリティレビュアーが受け入れるまで、署名の検証には進みません。手元の試験は `127.0.0.1` だけを聞き、外には開きません。
+
 ## 弁護士（スポット）
 
 常駐しません。必要なときに依頼します。最初に見るのは次です。
@@ -54,6 +60,12 @@ Roles for IX. A role without a named account is not assigned yet. The director n
 | Lawyer | Spot, not resident. | Whether a local rule matches the law, whether job-introduction licensing applies, and whether a proof hash can be erased as personal data. |
 
 The first node is an ordinary peer. It is not a root. Signature, key, and append-only record changes are not auto-merged.
+
+## Signature placeholders in T11 and T14
+
+The mock poster and worker drive the negotiation phases through the relay. Three conformance items pass only where a signature is not required: message structure, a private numeric bound, and an injected clock. Items that need signatures, JCS, or JWS stay pending. `prevHash`, `transcriptHash`, event `id`, and `sig` are caller-supplied strings. They are not computed and not checked. Human approval in the mock is a script. The approval app still refuses to sign. The mandate package stays a stub.
+
+Do not read those passes as a checked contract or as a six-item credential. Unmerged PR #3 is the canonicalization work. Signature checks stay stopped until a human security reviewer accepts that design. The private trial listens on `127.0.0.1` only.
 
 ## Signature placeholders in T09 and T10
 
