@@ -164,12 +164,38 @@ function isDigit(char: string | undefined): boolean {
   return char !== undefined && char >= "0" && char <= "9";
 }
 
+function shortPrefixStart(visual: string, index: number): number | undefined {
+  const separator = visual[index - 1];
+  if (separator === undefined || separator === " " || !phoneSeparators.has(separator)) {
+    return undefined;
+  }
+  let start = index - 1;
+  while (isDigit(visual[start - 1])) {
+    start -= 1;
+  }
+  const length = index - 1 - start;
+  if (length < 1 || length > 3) {
+    return undefined;
+  }
+  const before = visual[start - 1];
+  if (isDigit(before) || (before !== undefined && phoneSeparators.has(before) && before !== " ")) {
+    return undefined;
+  }
+  return start;
+}
+
 function phoneMayStart(visual: string, index: number): boolean {
   const previous = visual[index - 1];
   if (isDigit(previous)) {
     return false;
   }
-  if (previous !== undefined && previous !== " " && phoneSeparators.has(previous) && isDigit(visual[index - 2])) {
+  if (
+    previous !== undefined &&
+    previous !== " " &&
+    phoneSeparators.has(previous) &&
+    isDigit(visual[index - 2]) &&
+    shortPrefixStart(visual, index) === undefined
+  ) {
     return false;
   }
   const char = visual[index];
@@ -177,6 +203,11 @@ function phoneMayStart(visual: string, index: number): boolean {
     return true;
   }
   return char === "(" && isDigit(visual[index + 1]);
+}
+
+function continuesNumber(visual: string, end: number): boolean {
+  const next = visual[end];
+  return next !== undefined && next !== " " && phoneSeparators.has(next) && isDigit(visual[end + 1]);
 }
 
 function phoneSpans(visual: string): readonly Span[] {
@@ -188,7 +219,7 @@ function phoneSpans(visual: string): readonly Span[] {
       index += 1;
       continue;
     }
-    spans.push({ start: index, end });
+    spans.push({ start: shortPrefixStart(visual, index) ?? index, end });
     index = end;
   }
   return spans;
@@ -242,7 +273,7 @@ function phoneEnd(visual: string, start: number): number | undefined {
     if (digits > 11) {
       break;
     }
-    if (!open && phoneDigitCounts.has(digits)) {
+    if (!open && phoneDigitCounts.has(digits) && !continuesNumber(visual, cursor)) {
       best = cursor;
     }
   }

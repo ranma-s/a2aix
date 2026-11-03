@@ -362,6 +362,16 @@ describe("mock poster and worker", () => {
     expect(redactFreeText("taro%40example.com")).toBe("[contact-removed]");
   });
 
+  it("redacts a phone behind a short prefix and keeps spaced date and time ranges", () => {
+    expect(redactFreeText("電話1-090-1234-5678")).toBe("電話[contact-removed]");
+    expect(redactFreeText("連絡は 1-090-1234-5678 まで")).toBe("連絡は [contact-removed] まで");
+    expect(redactFreeText("12-090-1234-5678")).toBe("[contact-removed]");
+    expect(redactFreeText("期間 01/05/2026 - 03/31/2026")).toBe("期間 01/05/2026 - 03/31/2026");
+    expect(redactFreeText("09.00-18.00 / 10.00-19.00")).toBe("09.00-18.00 / 10.00-19.00");
+    expect(redactFreeText("03-1234-5678 / 090-1234-5678")).toBe("[contact-removed] / [contact-removed]");
+    expect(redactFreeText("01-02-03 のロット番号")).toBe("01-02-03 のロット番号");
+  });
+
   it("redacts contacts in proposal credentials before a human sees them", async () => {
     const clock = clockAt(sampleNow);
     const board = createTestBoard(clock);
