@@ -296,6 +296,75 @@ describe("mock poster and worker", () => {
     expect(redactFreeText("金額は180000円。期限は2026-11-20です。")).toBe("金額は180000円。期限は2026-11-20です。");
   });
 
+  it("redacts spaced, dotted, parenthesized, and encoded contacts", () => {
+    expect(redactFreeText("090 1234 5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090.1234.5678")).toBe("[contact-removed]");
+    expect(redactFreeText("(03) 1234-5678")).toBe("[contact-removed]");
+    expect(redactFreeText("+81 (90) 1234-5678")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&#64;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&#x40;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo [at] example [dot] com")).toBe("[contact-removed]");
+  });
+
+  it("leaves prices, dates, and budget numbers in place", () => {
+    expect(redactFreeText("200000")).toBe("200000");
+    expect(redactFreeText("150000")).toBe("150000");
+    expect(redactFreeText("180000")).toBe("180000");
+    expect(redactFreeText("2026-11-20")).toBe("2026-11-20");
+    expect(redactFreeText("2026-12-10T00:00:00.000Z")).toBe("2026-12-10T00:00:00.000Z");
+    expect(redactFreeText("予算の下限は150000、上限は180000、その外は200000。期限は2026-11-20です。")).toBe(
+      "予算の下限は150000、上限は180000、その外は200000。期限は2026-11-20です。",
+    );
+  });
+
+  it("scrubs the new contact shapes in human-facing text, not only in the agreement", async () => {
+    const description =
+      "電話は 090 1234 5678 と 090.1234.5678 と (03) 1234-5678 と +81 (90) 1234-5678。メールは foo&#64;example.com と foo&#x40;example.com と foo [at] example [dot] com。予算200000、下限150000、上限180000、期限2026-12-10。";
+    const clock = clockAt(sampleNow);
+    const board = createTestBoard(clock);
+    const report = await runPosterWorker({
+      board,
+      clock,
+      job: sampleJobWith({
+        description,
+        deliverables: ["構成案（PDF）", "090 1234 5678", "foo&#64;example.com"],
+      }),
+      posterBound: samplePosterBound,
+      workerBound: sampleWorkerBound,
+      humans,
+    });
+    const shown = report.poster.shownFreeText.join("\n");
+    const draft = report.events
+      .map((event) => readNegotiationRecord(event.body))
+      .find((read) => read.ok && read.message.type === "AgreementDraft");
+    for (const secret of [
+      "090 1234 5678",
+      "090.1234.5678",
+      "(03) 1234-5678",
+      "+81 (90) 1234-5678",
+      "foo&#64;example.com",
+      "foo&#x40;example.com",
+      "foo [at] example [dot] com",
+      "example.com",
+    ]) {
+      expect(shown.includes(secret)).toBe(false);
+    }
+    expect(shown.includes("[contact-removed]")).toBe(true);
+    expect(shown.includes("200000")).toBe(true);
+    expect(shown.includes("150000")).toBe(true);
+    expect(shown.includes("180000")).toBe(true);
+    expect(shown.includes("2026-12-10")).toBe(true);
+    expect(draft?.ok).toBe(true);
+    if (draft !== undefined && draft.ok && draft.message.type === "AgreementDraft") {
+      const joined = draft.message.deliverables.join("\n");
+      expect(joined.includes("090 1234 5678")).toBe(false);
+      expect(joined.includes("foo&#64;example.com")).toBe(false);
+      expect(joined.includes("example.com")).toBe(false);
+      expect(joined.includes("構成案（PDF）")).toBe(true);
+      expect(draft.message.price.amount).toBe(180000);
+    }
+  });
+
   it("does not copy a deliverable contact into the agreement", () => {
     const job = sampleJobWith({
       deliverables: ["構成案（PDF）", "tanaka@example.com", "09012345678"],

@@ -20,7 +20,7 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 
 ## いまあるもの / What is here
 
-土台に、交渉の段階、依頼票の手元の中継、模試の発注側・受注側、そして署名を見ない検査を足してあります。署名は確認しません。段階は [`docs/negotiation-states.md`](docs/negotiation-states.md)、配り方は [`docs/distribution.md`](docs/distribution.md)、手元だけの試し方は [`docs/local-trial.md`](docs/local-trial.md)、到達点は [`docs/feature-map.md`](docs/feature-map.md) です。
+土台に、交渉の段階、依頼票の手元の中継、模試の発注側・受注側、そして署名を見ない検査を足してあります。署名は確認しません。段階は [`docs/negotiation-states.md`](docs/negotiation-states.md)、配り方は [`docs/distribution.md`](docs/distribution.md)、手元だけの試し方は [`docs/local-trial.md`](docs/local-trial.md)、到達点は [`docs/feature-map.md`](docs/feature-map.md)、ここまでの記録は [`docs/retrospective.md`](docs/retrospective.md) です。
 
 - 交渉の段階機械。提案、対案、合意案、人間の承認・却下、3往復、期限を扱います。時計は外から渡します。署名の欄は後で確認するための空席で、中身は見ていません。
 - 拡張の名乗り。`A2A-Extensions` に、4つの拡張のうち相手と自分の両方が持つものだけを返します。交渉は、委任・承認・履歴が揃ったときだけ有効です。違う版は、別の版で代わりに受けません。
@@ -35,7 +35,7 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 - 適合テスト6項目のうち、署名なしで確かめられる4項目を、範囲を書いたうえで合格にしています。自由文の試験は18件で、名前は結果に残します。残り2項目は未実施です。緑でも、6項目すべてに合格したことにはなりません。
 - 検査を破る見本が `fixtures/guardrails/` にあります。普通のビルドには入れません。`pnpm guardrails` は、見本が失敗することと、許される書き方は成功することを確かめます。
 
-This revision is the foundation, the negotiation phase rules, an in-memory relay, mock poster and worker agents, and the checks that do not look at signatures. Signatures are not checked. The plain-language maps are [`docs/negotiation-states.md`](docs/negotiation-states.md), [`docs/distribution.md`](docs/distribution.md), [`docs/local-trial.md`](docs/local-trial.md), and [`docs/feature-map.md`](docs/feature-map.md).
+This revision is the foundation, the negotiation phase rules, an in-memory relay, mock poster and worker agents, and the checks that do not look at signatures. Signatures are not checked. The plain-language maps are [`docs/negotiation-states.md`](docs/negotiation-states.md), [`docs/distribution.md`](docs/distribution.md), [`docs/local-trial.md`](docs/local-trial.md), [`docs/feature-map.md`](docs/feature-map.md), and [`docs/retrospective.md`](docs/retrospective.md).
 
 - A negotiation phase machine: proposal, counter-proposal, agreement draft, human approve/reject, a 3-round cap, and deadlines. The clock is injected. The signature field is a placeholder and is not verified.
 - Extension activation. `A2A-Extensions` returns only the profile URIs both sides listed. Negotiation turns on only together with mandate, approval, and transcript. A different version is not answered with this one.
@@ -112,6 +112,7 @@ docs/negotiation-states.md     交渉の段階。非エンジニア向け
 docs/distribution.md           依頼票の配り方。非エンジニア向け
 docs/local-trial.md            手元だけの試験。非エンジニア向け
 docs/feature-map.md            動くものと、まだないもの
+docs/retrospective.md          ここまでの記録。非エンジニア向け
 docs/team.md                   チーム
 .cursor/skills/verify-ix-node/ 検証手順。drive は 127.0.0.1 を起動する
 .cursor/settings.json          pstack を有効にする

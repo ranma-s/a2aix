@@ -223,6 +223,10 @@ function createSide(input: SideInput): MockSide {
           jobEventId = event.id;
           show(job.title);
           show(job.description);
+          show(job.scope);
+          show(job.acceptanceCriteria);
+          show(job.localRules);
+          show(job.localTerms.ipOwnership);
           for (const skill of job.requiredSkills) {
             show(skill);
           }
@@ -240,11 +244,26 @@ function createSide(input: SideInput): MockSide {
         remember(read.reason === "not_negotiation" ? "bad_message" : read.reason, event.id);
         continue;
       }
-      if (read.message.type === "Proposal" || read.message.type === "CounterProposal") {
+      if (read.message.type === "Proposal") {
         show(read.message.note);
+      }
+      if (read.message.type === "CounterProposal") {
+        show(read.message.note);
+        for (const change of read.message.changes) {
+          show(change);
+        }
       }
       if (read.message.type === "ApprovalDecision") {
         show(read.message.comment);
+      }
+      if (read.message.type === "AgreementDraft") {
+        show(read.message.scope);
+        show(read.message.acceptanceCriteria);
+        show(read.message.localRules);
+        show(read.message.localTerms.ipOwnership);
+        for (const item of read.message.deliverables) {
+          show(item);
+        }
       }
       if (read.message.type === "AgreementDraft" && !acceptableDraft(read.message)) {
         continue;

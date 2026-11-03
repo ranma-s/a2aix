@@ -21,6 +21,7 @@ const reverseClosers = new Set<number>([0x202a, 0x202c, 0x202d]);
 type Mark = {
   readonly visual: string;
   readonly origin: number;
+  readonly width: number;
 };
 
 type Span = {
@@ -31,12 +32,10 @@ type Span = {
 export function redactFreeText(value: string): string {
   const marks = visualMarks(value);
   let visual = "";
-  const origins: number[] = [];
   for (const mark of marks) {
     visual += mark.visual;
-    origins.push(mark.origin);
   }
-  const spans = contactSpans(visual, origins, value);
+  const spans = contactSpans(visual, marks);
   let output = value;
   for (let index = spans.length - 1; index >= 0; index -= 1) {
     const span = spans[index];
@@ -68,11 +67,16 @@ function visualMarks(value: string): readonly Mark[] {
     }
     segment = [];
   };
-  for (const char of value) {
-    const code = char.codePointAt(0);
-    const width = code !== undefined && code > 0xffff ? 2 : 1;
+  while (index < value.length) {
+    const code = value.codePointAt(index);
     if (code === undefined) {
-      index += width;
+      break;
+    }
+    const width = code > 0xffff ? 2 : 1;
+    const entity = atEntityWidth(value, index);
+    if (entity > 0) {
+      segment.push({ visual: "@", origin: index, width: entity });
+      index += entity;
       continue;
     }
     if (reverseOpeners.has(code)) {
@@ -91,20 +95,29 @@ function visualMarks(value: string): readonly Mark[] {
       index += width;
       continue;
     }
-    segment.push({ visual: foldChar(code), origin: index });
+    segment.push({ visual: foldChar(code), origin: index, width });
     index += width;
   }
   flush();
   return marks;
 }
 
-function contactSpans(visual: string, origins: readonly number[], source: string): readonly Span[] {
+function atEntityWidth(value: string, index: number): number {
+  const match = /^&#(?:0*64|x0*40);/i.exec(value.slice(index));
+  if (match === null) {
+    return 0;
+  }
+  return match[0].length;
+}
+
+function contactSpans(visual: string, marks: readonly Mark[]): readonly Span[] {
   const found: Span[] = [];
   const patterns = [
     /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
     /[a-z0-9._%+-]+\s*(?:@|\(at\)|\[at\]|\bat\b)\s*[a-z0-9-]+(?:\s*(?:\.|\(dot\)|\[dot\]|\bdot\b)\s*[a-z0-9-]+)+/gi,
     /\+\d{1,3}(?:[\s().-]*\d){6,14}/g,
-    /\b0\d{1,4}-\d{1,4}-\d{4}\b/g,
+    /\(\d{1,4}\)\s*\d{1,4}(?:[ .-]\d{2,4})+/g,
+    /\b0\d{1,4}(?:[ .-]\d{1,4}){1,3}\b/g,
     /\b0\d{9,10}\b/g,
   ];
   for (const pattern of patterns) {
@@ -114,14 +127,14 @@ function contactSpans(visual: string, origins: readonly number[], source: string
       if (text.length === 0) {
         continue;
       }
-      const startOrigin = origins[from];
-      const endOrigin = origins[from + text.length - 1];
-      if (startOrigin === undefined || endOrigin === undefined) {
+      const startMark = marks[from];
+      const endMark = marks[from + text.length - 1];
+      if (startMark === undefined || endMark === undefined) {
         continue;
       }
-      const start = Math.min(startOrigin, endOrigin);
-      const last = Math.max(startOrigin, endOrigin);
-      found.push({ start, end: last + widthAt(source, last) });
+      const start = Math.min(startMark.origin, endMark.origin);
+      const last = startMark.origin <= endMark.origin ? endMark : startMark;
+      found.push({ start, end: last.origin + last.width });
     }
   }
   return mergeSpans(found);
@@ -158,12 +171,4 @@ function foldChar(code: number): string {
     return String.fromCodePoint(code - 0xff00 + 0x20);
   }
   return String.fromCodePoint(code);
-}
-
-function widthAt(source: string, index: number): number {
-  const code = source.codePointAt(index);
-  if (code !== undefined && code > 0xffff) {
-    return 2;
-  }
-  return 1;
 }
