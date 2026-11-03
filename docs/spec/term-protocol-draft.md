@@ -27,7 +27,7 @@
 
 | `valueType` | 値 | 例 |
 | --- | --- | --- |
-| `money` | `{"amount": 整数, "currency": ISO 4217, "taxIncluded": 真偽}` | `{"amount":180000,"currency":"JPY","taxIncluded":true}` |
+| `money` | `{"amount": 整数, "currency": 現行の ISO 4217 の通貨コード, "taxIncluded": 真偽}` | `{"amount":180000,"currency":"JPY","taxIncluded":true}` |
 | `date` | ISO 8601 の日付 | `"2026-12-10"` |
 | `datetime` | RFC 3339 の時刻 | `"2026-12-10T18:00:00+09:00"` |
 | `integer` | 整数（`unit` 付き可） | `2` |
@@ -51,7 +51,7 @@
 
 | 欄 | 意味 |
 | --- | --- |
-| `path` | 目録の中での名前（例: `spec/requirements.pdf`）。`/` 区切り、重複不可 |
+| `path` | 目録の中での名前（例: `spec/requirements.pdf`）。`/` 区切りの相対パスで、重複不可。先頭の `/`、`\`、`:`、制御文字、空の区切り、`.` と `..`、前後に空白のある区切りは使えない。日本語のファイル名は使える |
 | `sha256` | ファイルのバイト列そのものの SHA-256（小文字16進） |
 | `bytes` | ファイルの大きさ（バイト数） |
 | `mediaType` | ファイルの種類（例: `application/pdf`） |
@@ -116,6 +116,7 @@
 | `TermAdd` | 項目表にない項目を、この交渉に足したい | `definition`（2章の定義） |
 | `TermDrop` | 任意の項目を、この交渉では決めない | `termId` |
 | `TermReopen` | 確定した項目を、もう一度開く | `termId` |
+| `TermRefuse` | 相手の `TermAdd` `TermDrop` `TermReopen` だけを断る。交渉は続く | `termId` |
 | `DealDecline` | 交渉をやめる | `reason` |
 
 どのメッセージにも `prevHash`（1つ前のメッセージの指紋）、`sentAt`、`expiresAt`、`signature` を付ける。`valueHash` は、値の JCS の SHA-256 である。`note` は人が読む自由文で、機械は判断に使わない。
@@ -127,7 +128,7 @@
 | `open` | まだ誰も値を出していない | `proposed`、`dropped` |
 | `proposed` | 片方が値を出した | `fixed`（相手が `TermAccept`）、`proposed`（相手が `TermCounter`。出した側が入れ替わる） |
 | `fixed` | 双方が同じ値に同意した | `reopen_requested`（`TermReopen`） |
-| `add_requested` `drop_requested` `reopen_requested` | 片方が足す・落とす・開き直すことを求めた | 相手の `TermAccept` で `open`、`dropped`、`open` |
+| `add_requested` `drop_requested` `reopen_requested` | 片方が足す・落とす・開き直すことを求めた | 相手の `TermAccept` で `open`、`dropped`、`open`。相手の `TermRefuse` で、足す求めは項目ごと消え、落とす・開き直す求めは元の状態（値と出した側も）に戻る |
 | `dropped` | 任意の項目を、双方が決めないことにした | — |
 
 規則:

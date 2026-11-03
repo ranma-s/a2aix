@@ -67,6 +67,7 @@ export const termMessageTypes = [
   "TermAdd",
   "TermDrop",
   "TermReopen",
+  "TermRefuse",
   "DealDecline",
   "TermAgreementDraft",
   "TermApproval",
@@ -107,6 +108,11 @@ export type TermDropMessage = Envelope & {
   readonly termId: string;
 };
 
+export type TermRefuseMessage = Envelope & {
+  readonly type: "TermRefuse";
+  readonly termId: string;
+};
+
 export type DealDeclineMessage = Envelope & {
   readonly type: "DealDecline";
   readonly reason: string;
@@ -128,6 +134,7 @@ export type TermMessage =
   | TermAcceptMessage
   | TermAddMessage
   | TermDropMessage
+  | TermRefuseMessage
   | DealDeclineMessage
   | TermAgreementDraftMessage
   | TermApprovalMessage;
@@ -165,6 +172,12 @@ export type TermState = {
   readonly value?: TermJson;
   readonly by?: Party;
   readonly counters: number;
+  readonly prior?: TermPrior;
+};
+
+export type TermPrior = {
+  readonly status: TermStatus;
+  readonly by?: Party;
 };
 
 export const termPhases = ["negotiating", "awaiting_approval", "agreed", "no_deal"] as const;
@@ -263,7 +276,39 @@ const datePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 const datetimePattern = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 const kindCodePattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
-const currencyPattern = /^[A-Z]{3}$/;
+export const iso4217Currencies = [
+  "AED", "AFN", "ALL", "AMD", "AOA", "ARS", "AUD", "AWG", "AZN", "BAM", "BBD", "BDT", "BGN", "BHD", "BIF", "BMD",
+  "BND", "BOB", "BRL", "BSD", "BTN", "BWP", "BYN", "BZD", "CAD", "CDF", "CHF", "CLP", "CNY", "COP", "CRC", "CUP",
+  "CVE", "CZK", "DJF", "DKK", "DOP", "DZD", "EGP", "ERN", "ETB", "EUR", "FJD", "FKP", "GBP", "GEL", "GHS", "GIP",
+  "GMD", "GNF", "GTQ", "GYD", "HKD", "HNL", "HTG", "HUF", "IDR", "ILS", "INR", "IQD", "IRR", "ISK", "JMD", "JOD",
+  "JPY", "KES", "KGS", "KHR", "KMF", "KPW", "KRW", "KWD", "KYD", "KZT", "LAK", "LBP", "LKR", "LRD", "LSL", "LYD",
+  "MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MRU", "MUR", "MVR", "MWK", "MXN", "MYR", "MZN", "NAD", "NGN",
+  "NIO", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR", "RON", "RSD", "RUB",
+  "RWF", "SAR", "SBD", "SCR", "SDG", "SEK", "SGD", "SHP", "SLE", "SOS", "SRD", "SSP", "STN", "SVC", "SYP", "SZL",
+  "THB", "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TWD", "TZS", "UAH", "UGX", "USD", "UYU", "UZS", "VES", "VND",
+  "VUV", "WST", "XAF", "XCD", "XOF", "XPF", "YER", "ZAR", "ZMW", "ZWG",
+] as const;
+
+export function isCurrencyCode(value: string): boolean {
+  return iso4217Currencies.some((code) => code === value);
+}
+
+function hasPathControl(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f || char === "\\" || char === ":") {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isSafeRelativePath(value: string): boolean {
+  if (value.length === 0 || value.length > 1024 || value.startsWith("/") || hasPathControl(value)) {
+    return false;
+  }
+  return value.split("/").every((segment) => segment.length > 0 && segment.length <= 255 && segment !== "." && segment !== ".." && segment.trim() === segment);
+}
 const mediaTypePattern = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
 const termIdPattern = /^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9/._-]*$/;
 
@@ -295,9 +340,6 @@ function isCalendarDate(value: string): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
-function isText(value: TermJson | undefined): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
 
 export function checkTermValue(definition: TermDefinition, value: TermJson): string | undefined {
   const codes = definition.codes;
@@ -308,12 +350,12 @@ export function checkTermValue(definition: TermDefinition, value: TermJson): str
         hasOnlyKeys(value, ["amount", "currency", "taxIncluded"]) &&
         isCount(value["amount"], 0) &&
         typeof value["currency"] === "string" &&
-        currencyPattern.test(value["currency"]) &&
+        isCurrencyCode(value["currency"]) &&
         typeof value["taxIncluded"] === "boolean"
       ) {
         return undefined;
       }
-      return "money needs an integer amount, an ISO 4217 currency, and taxIncluded";
+      return "money needs an integer amount, an active ISO 4217 currency, and taxIncluded";
     case "date":
       return typeof value === "string" && isCalendarDate(value) ? undefined : "date must be YYYY-MM-DD";
     case "datetime":
@@ -389,7 +431,7 @@ function checkFile(value: TermJson | undefined, withPath: boolean): string | und
   if (
     !isObject(value) ||
     !hasOnlyKeys(value, keys) ||
-    (withPath && !isText(value["path"])) ||
+    (withPath && (typeof value["path"] !== "string" || !isSafeRelativePath(value["path"]))) ||
     typeof value["sha256"] !== "string" ||
     !sha256Pattern.test(value["sha256"]) ||
     !isCount(value["bytes"], 0) ||
@@ -650,6 +692,8 @@ function step(session: TermSession, message: TermMessage): TermResult {
     case "TermDrop":
     case "TermReopen":
       return applyRequest(session, message);
+    case "TermRefuse":
+      return applyRefuse(session, message);
     case "TermAgreementDraft":
       return applyDraft(session, message);
     case "TermApproval":
@@ -769,8 +813,32 @@ function applyRequest(session: TermSession, message: TermDropMessage): TermResul
 }
 
 function settleRequest(session: TermSession, term: TermState, status: TermStatus, by: Party): TermResult {
-  const next: TermState = { ...term, status, by };
+  const prior: TermPrior = term.by === undefined ? { status: term.status } : { status: term.status, by: term.by };
+  const next: TermState = { ...term, status, by, prior };
   return { ok: true, session: { ...session, terms: replaceTerm(session, next) } };
+}
+
+function applyRefuse(session: TermSession, message: TermRefuseMessage): TermResult {
+  const term = findTerm(session, message.termId);
+  if (term === undefined) {
+    return refuse(`${message.termId} is not part of this negotiation`);
+  }
+  if (term.by === message.from) {
+    return refuse("a side cannot refuse its own request");
+  }
+  if (term.status === "add_requested") {
+    return {
+      ok: true,
+      session: { ...session, terms: session.terms.filter((entry) => entry.definition.termId !== message.termId) },
+    };
+  }
+  if ((term.status !== "drop_requested" && term.status !== "reopen_requested") || term.prior === undefined) {
+    return refuse(`${message.termId} has no request to refuse`);
+  }
+  const base: TermState = { definition: term.definition, required: term.required, status: term.prior.status, counters: term.counters };
+  const withValue: TermState = term.value === undefined ? base : { ...base, value: term.value };
+  const restored: TermState = term.prior.by === undefined ? withValue : { ...withValue, by: term.prior.by };
+  return { ok: true, session: { ...session, terms: replaceTerm(session, restored) } };
 }
 
 export function readyForAgreement(session: TermSession): boolean {

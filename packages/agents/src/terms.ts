@@ -2,6 +2,7 @@ import {
   applyTermMessage,
   buildTermAgreement,
   counterpartOf,
+  isCurrencyCode,
   openTermSession,
   readyForAgreement,
   sameTermValue,
@@ -141,16 +142,15 @@ function documentsMatch(held: { readonly [path: string]: string }, value: TermJs
   });
 }
 
-const currencyPattern = /^[A-Z]{3}$/;
 
 export function checkTermLimit(limit: TermLimit): string | undefined {
   switch (limit.kind) {
     case "money-max":
-      return currencyPattern.test(limit.currency) && Number.isSafeInteger(limit.ask) && Number.isSafeInteger(limit.max) && limit.ask >= 0 && limit.ask <= limit.max
+      return isCurrencyCode(limit.currency) && Number.isSafeInteger(limit.ask) && Number.isSafeInteger(limit.max) && limit.ask >= 0 && limit.ask <= limit.max
         ? undefined
         : "money-max needs a currency and 0 <= ask <= max";
     case "money-min":
-      return currencyPattern.test(limit.currency) && Number.isSafeInteger(limit.ask) && Number.isSafeInteger(limit.min) && limit.min >= 0 && limit.ask >= limit.min
+      return isCurrencyCode(limit.currency) && Number.isSafeInteger(limit.ask) && Number.isSafeInteger(limit.min) && limit.min >= 0 && limit.ask >= limit.min
         ? undefined
         : "money-min needs a currency and 0 <= min <= ask";
     case "date-by":

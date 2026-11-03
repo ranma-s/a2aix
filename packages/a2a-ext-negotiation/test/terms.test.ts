@@ -306,4 +306,45 @@ describe("term-by-term negotiation", () => {
       expect(result.ok).toBe(false);
     }
   });
+
+  it("lets the other side refuse one request without ending the deal", () => {
+    const negotiated = run(opened(), fixAllCore);
+    const askedReopen = run(negotiated, [{ ...envelope("worker"), type: "TermReopen", termId: "ix:price" }]);
+    expect(applyTermMessage(askedReopen, { ...envelope("worker"), type: "TermRefuse", termId: "ix:price" }, clock).ok).toBe(false);
+    const kept = run(askedReopen, [{ ...envelope("client"), type: "TermRefuse", termId: "ix:price" }]);
+    const price = kept.terms.find((term) => term.definition.termId === "ix:price");
+    expect(price?.status).toBe("fixed");
+    expect(price?.value).toEqual(yen(180000));
+    expect(readyForAgreement(kept)).toBe(true);
+    const askedAdd = run(negotiated, [
+      { ...envelope("worker"), type: "TermAdd", definition: { termId: "x:extra", version: 1, valueType: "boolean" }, required: true },
+      { ...envelope("client"), type: "TermRefuse", termId: "x:extra" },
+    ]);
+    expect(askedAdd.terms.some((term) => term.definition.termId === "x:extra")).toBe(false);
+    expect(askedAdd.phase).toBe("negotiating");
+    const proposedSpec = run(opened(), [
+      propose("client", "ix:initial-spec", { manifestSha256: sha("1"), files: [{ path: "a.pdf", sha256: sha("1"), bytes: 1, mediaType: "application/pdf" }] }),
+      { ...envelope("worker"), type: "TermDrop", termId: "ix:initial-spec" },
+      { ...envelope("client"), type: "TermRefuse", termId: "ix:initial-spec" },
+    ]);
+    const spec = proposedSpec.terms.find((term) => term.definition.termId === "ix:initial-spec");
+    expect(spec?.status).toBe("proposed");
+    expect(spec?.by).toBe("client");
+  });
+
+  it("accepts only active ISO 4217 currencies and safe relative file paths", () => {
+    const [price] = coreSheet.required;
+    if (price === undefined) {
+      throw new Error("core sheet is incomplete");
+    }
+    expect(checkTermValue(price, { amount: 1, currency: "XYZ", taxIncluded: true })).toBeDefined();
+    expect(checkTermValue(price, { amount: 1, currency: "USD", taxIncluded: false })).toBeUndefined();
+    const file = (path: string): TermJson => ({ manifestSha256: sha("9"), files: [{ path, sha256: sha("1"), bytes: 1, mediaType: "application/pdf" }] });
+    for (const bad of ["../../etc/passwd", "/abs.pdf", "C:\\x y", "a//b.pdf", "a/./b.pdf", "a\u0000.pdf", " lead.pdf"]) {
+      expect(checkTermValue(initialSpecTerm, file(bad))).toBeDefined();
+    }
+    for (const good of ["spec/requirements.pdf", "仕様書/要件定義.pdf", "v1.2/design-brief_final.pdf"]) {
+      expect(checkTermValue(initialSpecTerm, file(good))).toBeUndefined();
+    }
+  });
 });
