@@ -29,7 +29,7 @@ const clientMandate: TermMandate = {
 
 const workerMandate: TermMandate = {
   "ix:price": { kind: "money-min", currency: "JPY", taxIncluded: true, ask: 200000, min: 170000 },
-  "ix:deadline": { kind: "deadline-from", zone: "America/Los_Angeles", ask: "2026-12-25T17:00:00-08:00", earliest: "2026-12-15T09:00:00Z" },
+  "ix:deadline": { kind: "deadline-from", zone: "America/Los_Angeles", ask: "2026-12-25T17:00:00-08:00", earliest: "2026-12-15T01:00:00-08:00" },
   "ix:revision-limit": { kind: "integer-range", ask: 1, min: 1, max: 2 },
   "ix:acceptance-window": { kind: "one-of", values: [{ value: 7, unit: "day" }, { value: 5, unit: "day" }] },
   "ix:deliverables": { kind: "one-of", values: [[{ code: "web-page", n: 5 }]] },
@@ -166,5 +166,16 @@ describe("mock agents negotiating term by term", () => {
         runTermTrial(trial({ worker: { party: "worker", mandate: { ...workerMandate, "ix:deadline": { kind: "deadline-from", zone, ask: "2026-12-31T18:00:00+09:00", earliest: "2026-12-15T00:00:00Z" } }, human: "approve" } })),
       ).toThrow(/ix:deadline/);
     }
+  });
+
+  it("refuses mandate limits whose offset does not match the agent's zone", () => {
+    for (const latest of ["2026-12-20T18:00:00-05:00", "2026-12-20T09:00:00Z", "2026-12-20T18:00:00-00:00"]) {
+      expect(() =>
+        runTermTrial(trial({ client: { party: "client", mandate: { ...clientMandate, "ix:deadline": { kind: "deadline-by", zone: "Asia/Tokyo", ask: "2026-12-10T18:00:00+09:00", latest } }, human: "approve" } })),
+      ).toThrow(/ix:deadline/);
+    }
+    expect(() =>
+      runTermTrial(trial({ worker: { party: "worker", mandate: { ...workerMandate, "ix:deadline": { kind: "deadline-from", zone: "America/Los_Angeles", ask: "2026-12-25T17:00:00-08:00", earliest: "2026-12-15T09:00:00Z" } }, human: "approve" } })),
+    ).toThrow(/ix:deadline/);
   });
 });

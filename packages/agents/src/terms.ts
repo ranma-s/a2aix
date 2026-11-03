@@ -164,6 +164,10 @@ function instantOf(value: TermJson | undefined): number | undefined {
   return typeof at === "string" ? Date.parse(at) : undefined;
 }
 
+function inZone(zone: string, instant: string): boolean {
+  return checkTermValue(deadlineTerm, { at: instant, zone }) === undefined;
+}
+
 function deadlineAt(zone: string, instant: string): TermJson | undefined {
   return isInstant(instant) ? deadlineIn(Date.parse(instant), zone) : undefined;
 }
@@ -179,13 +183,13 @@ export function checkTermLimit(limit: TermLimit): string | undefined {
         ? undefined
         : "money-min needs a currency and 0 <= min <= ask";
     case "deadline-by":
-      return isInstant(limit.ask) && isInstant(limit.latest) && deadlineAt(limit.zone, limit.ask) !== undefined && Date.parse(limit.ask) <= Date.parse(limit.latest)
+      return inZone(limit.zone, limit.ask) && inZone(limit.zone, limit.latest) && Date.parse(limit.ask) <= Date.parse(limit.latest)
         ? undefined
-        : "deadline-by needs an IANA zone and RFC 3339 instants with ask at or before latest";
+        : "deadline-by needs an IANA zone and RFC 3339 instants written with that zone's offset, with ask at or before latest";
     case "deadline-from":
-      return isInstant(limit.ask) && isInstant(limit.earliest) && deadlineAt(limit.zone, limit.ask) !== undefined && Date.parse(limit.ask) >= Date.parse(limit.earliest)
+      return inZone(limit.zone, limit.ask) && inZone(limit.zone, limit.earliest) && Date.parse(limit.ask) >= Date.parse(limit.earliest)
         ? undefined
-        : "deadline-from needs an IANA zone and RFC 3339 instants with ask at or after earliest";
+        : "deadline-from needs an IANA zone and RFC 3339 instants written with that zone's offset, with ask at or after earliest";
     case "integer-range":
       return Number.isSafeInteger(limit.min) && Number.isSafeInteger(limit.max) && Number.isSafeInteger(limit.ask) && limit.min <= limit.ask && limit.ask <= limit.max
         ? undefined
