@@ -152,4 +152,15 @@ describe("mock agents negotiating term by term", () => {
     const revisions = fixedValue(result, "ix:revision-limit");
     expect(typeof revisions === "number" && revisions >= 1 && revisions <= 2).toBe(true);
   });
+
+  it("refuses date limits that are not real dates", () => {
+    for (const latest of ["9999-99-99", "zzz", ""]) {
+      expect(() =>
+        runTermTrial(trial({ client: { party: "client", mandate: { ...clientMandate, "ix:deadline": { kind: "date-by", ask: "2026-12-01", latest } }, human: "approve" } })),
+      ).toThrow(/ix:deadline/);
+    }
+    expect(() =>
+      runTermTrial(trial({ worker: { party: "worker", mandate: { ...workerMandate, "ix:deadline": { kind: "date-from", ask: "2026-12-31", earliest: "" } }, human: "approve" } })),
+    ).toThrow(/ix:deadline/);
+  });
 });

@@ -347,4 +347,38 @@ describe("term-by-term negotiation", () => {
       expect(checkTermValue(initialSpecTerm, file(good))).toBeUndefined();
     }
   });
+
+  it("accepts XCG and VED, and refuses invisible or unnormalized file names", () => {
+    const [price, , , , deliverables] = coreSheet.required;
+    if (price === undefined || deliverables === undefined) {
+      throw new Error("core sheet is incomplete");
+    }
+    expect(checkTermValue(price, { amount: 1000, currency: "XCG", taxIncluded: true })).toBeUndefined();
+    expect(checkTermValue(price, { amount: 1000, currency: "VED", taxIncluded: true })).toBeUndefined();
+    expect(checkTermValue(deliverables, [{ code: "a-", n: 1 }])).toBeDefined();
+    const file = (path: string): TermJson => ({ manifestSha256: sha("9"), files: [{ path, sha256: sha("1"), bytes: 1, mediaType: "application/pdf" }] });
+    for (const bad of ["a\u202Eb.pdf", "a\u200Bb.pdf", "a\u0085b.pdf", "a\u3164b.pdf", "\u304B\u3099.pdf"]) {
+      expect(checkTermValue(initialSpecTerm, file(bad))).toBeDefined();
+    }
+    expect(checkTermValue(initialSpecTerm, file("\u304C.pdf"))).toBeUndefined();
+  });
+
+  it("refuses malformed messages instead of throwing", () => {
+    const session = opened();
+    const broken: unknown[] = [
+      null,
+      { ...envelope("worker"), type: "TermAdd", definition: { termId: "x:c", version: 1, valueType: "codes", codes: [1] }, required: false },
+      { ...envelope("worker"), type: "TermAdd", definition: { termId: "x:c", version: 1, valueType: "boolean" }, required: "no" },
+      { ...envelope("worker"), type: "TermAdd", definition: { termId: "x:c", version: 1, valueType: "boolean", label: "x" }, required: false },
+      { ...envelope("client"), type: "TermAgreementDraft", agreement: null },
+      { ...envelope("client"), type: "TermAgreementDraft", agreement: { agreementId: "a", jobId: "j", sheet: {}, terms: [], transcriptHash: "t" } },
+      { type: "TermPropose", from: "worker", sentAt: "2026-11-03T00:00:00.000Z", expiresAt: "2026-11-04T00:00:00.000Z", prevHash: "u", termId: "ix:price", value: 1 },
+    ];
+    for (const raw of broken) {
+      const base: TermMessage = { ...envelope("worker"), type: "TermAccept", termId: "ix:price", valueHash: valueHashVerification };
+      const message: TermMessage = raw === null ? Object.assign(base, { signature: null }) : Object.assign(base, raw);
+      expect(() => applyTermMessage(session, message, clock)).not.toThrow();
+      expect(applyTermMessage(session, message, clock).ok).toBe(false);
+    }
+  });
 });

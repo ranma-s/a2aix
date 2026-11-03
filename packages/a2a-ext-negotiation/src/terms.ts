@@ -274,7 +274,7 @@ export const webSiteSheet: TermSheet = {
 
 const datePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 const datetimePattern = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
-const kindCodePattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const kindCodePattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
 export const iso4217Currencies = [
   "AED", "AFN", "ALL", "AMD", "AOA", "ARS", "AUD", "AWG", "AZN", "BAM", "BBD", "BDT", "BGN", "BHD", "BIF", "BMD",
@@ -285,18 +285,34 @@ export const iso4217Currencies = [
   "MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MRU", "MUR", "MVR", "MWK", "MXN", "MYR", "MZN", "NAD", "NGN",
   "NIO", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR", "RON", "RSD", "RUB",
   "RWF", "SAR", "SBD", "SCR", "SDG", "SEK", "SGD", "SHP", "SLE", "SOS", "SRD", "SSP", "STN", "SVC", "SYP", "SZL",
-  "THB", "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TWD", "TZS", "UAH", "UGX", "USD", "UYU", "UZS", "VES", "VND",
-  "VUV", "WST", "XAF", "XCD", "XOF", "XPF", "YER", "ZAR", "ZMW", "ZWG",
+  "THB", "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TWD", "TZS", "UAH", "UGX", "USD", "UYU", "UZS", "VED", "VES",
+  "VND", "VUV", "WST", "XAF", "XCD", "XCG", "XOF", "XPF", "YER", "ZAR", "ZMW", "ZWG",
 ] as const;
 
 export function isCurrencyCode(value: string): boolean {
   return iso4217Currencies.some((code) => code === value);
 }
 
+const invisiblePathCodes = new Set([0x00ad, 0x034f, 0x061c, 0x115f, 0x1160, 0x180e, 0x3164, 0xfeff, 0xffa0]);
+
+function isInvisibleOrControl(code: number): boolean {
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    (code >= 0x200b && code <= 0x200f) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2060 && code <= 0x2069) ||
+    invisiblePathCodes.has(code)
+  );
+}
+
 function hasPathControl(value: string): boolean {
+  if (value.normalize("NFC") !== value) {
+    return true;
+  }
   for (const char of value) {
     const code = char.codePointAt(0) ?? 0;
-    if (code < 0x20 || code === 0x7f || char === "\\" || char === ":") {
+    if (isInvisibleOrControl(code) || char === "\\" || char === ":") {
       return true;
     }
   }
@@ -507,7 +523,7 @@ export function checkTermDefinition(definition: TermDefinition): string | undefi
     if (definition.codes === undefined || definition.codes.length === 0) {
       return "a code or codes term needs a non-empty code list";
     }
-    if (new Set(definition.codes).size !== definition.codes.length || !definition.codes.every((code) => code.trim().length > 0)) {
+    if (new Set(definition.codes).size !== definition.codes.length || !definition.codes.every((code) => typeof code === "string" && code.trim().length > 0)) {
       return "the code list must hold distinct non-empty codes";
     }
   } else if (definition.codes !== undefined) {
@@ -628,6 +644,11 @@ function findTerm(session: TermSession, termId: string): TermState | undefined {
 }
 
 export function applyTermMessage(session: TermSession, message: TermMessage, clock: Clock): TermResult {
+  const raw: unknown = message;
+  const malformed = checkMessageShape(raw);
+  if (malformed !== undefined) {
+    return refuse(malformed);
+  }
   const now = Date.parse(clock.now());
   const expires = Date.parse(message.expiresAt);
   if (Number.isNaN(expires) || Number.isNaN(now) || expires <= now) {
@@ -652,6 +673,102 @@ export function applyTermMessage(session: TermSession, message: TermMessage, clo
 }
 
 const approvalDecisions = ["approve", "reject", "revise"] as const;
+
+type Loose = { readonly [key: string]: unknown };
+
+function isLoose(value: unknown): value is Loose {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function looseList(value: unknown): readonly unknown[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items: readonly unknown[] = value;
+  return items;
+}
+
+function isStringList(value: unknown): boolean {
+  const items = looseList(value);
+  return items !== undefined && items.every((item) => typeof item === "string");
+}
+
+function checkDefinitionShape(value: unknown): string | undefined {
+  if (!isLoose(value) || typeof value["termId"] !== "string" || typeof value["version"] !== "number" || typeof value["valueType"] !== "string") {
+    return "a term definition needs termId, version, and valueType";
+  }
+  if (value["unit"] !== undefined && typeof value["unit"] !== "string") {
+    return "unit must be text";
+  }
+  if (value["codes"] !== undefined && !isStringList(value["codes"])) {
+    return "codes must be a list of text";
+  }
+  const label = value["label"];
+  if (label !== undefined && (!isLoose(label) || !Object.values(label).every((text) => typeof text === "string"))) {
+    return "label must map languages to text";
+  }
+  return undefined;
+}
+
+function checkMessageShape(raw: unknown): string | undefined {
+  if (!isLoose(raw)) {
+    return "a message must be an object";
+  }
+  for (const key of ["type", "from", "sentAt", "expiresAt", "prevHash"]) {
+    if (typeof raw[key] !== "string") {
+      return `${key} must be text`;
+    }
+  }
+  const signature = raw["signature"];
+  if (!isLoose(signature) || typeof signature["verification"] !== "string" || typeof signature["material"] !== "string") {
+    return "signature must carry verification and material";
+  }
+  switch (raw["type"]) {
+    case "TermPropose":
+    case "TermCounter":
+      return typeof raw["termId"] === "string" && raw["value"] !== undefined ? undefined : "a proposal needs termId and value";
+    case "TermAccept":
+      return typeof raw["termId"] === "string" && typeof raw["valueHash"] === "string" ? undefined : "an accept needs termId and valueHash";
+    case "TermDrop":
+    case "TermReopen":
+    case "TermRefuse":
+      return typeof raw["termId"] === "string" ? undefined : "this message needs termId";
+    case "TermAdd":
+      return typeof raw["required"] === "boolean" ? checkDefinitionShape(raw["definition"]) : "required must be true or false";
+    case "DealDecline":
+      return typeof raw["reason"] === "string" ? undefined : "a decline needs a reason";
+    case "TermApproval":
+      return raw["reopen"] === undefined || isStringList(raw["reopen"]) ? undefined : "reopen must be a list of termIds";
+    case "TermAgreementDraft": {
+      const agreement = raw["agreement"];
+      if (
+        !isLoose(agreement) ||
+        typeof agreement["agreementId"] !== "string" ||
+        typeof agreement["jobId"] !== "string" ||
+        typeof agreement["transcriptHash"] !== "string" ||
+        !isLoose(agreement["sheet"])
+      ) {
+        return "an agreement draft needs agreementId, jobId, sheet, and transcriptHash";
+      }
+      const added = looseList(agreement["addedTerms"]);
+      const terms = looseList(agreement["terms"]);
+      if (added === undefined || terms === undefined) {
+        return "an agreement draft needs addedTerms and terms lists";
+      }
+      for (const definition of added) {
+        const problem = checkDefinitionShape(definition);
+        if (problem !== undefined) {
+          return problem;
+        }
+      }
+      return terms.every((term) => isLoose(term) && typeof term["termId"] === "string" && term["value"] !== undefined)
+        ? undefined
+        : "each agreed term needs termId and value";
+    }
+    default:
+      return "unknown message type";
+  }
+}
 
 function checkEnvelope(message: TermMessage): string | undefined {
   const type: string = message.type;

@@ -1,6 +1,7 @@
 import {
   applyTermMessage,
   buildTermAgreement,
+  checkTermValue,
   counterpartOf,
   isCurrencyCode,
   openTermSession,
@@ -143,6 +144,12 @@ function documentsMatch(held: { readonly [path: string]: string }, value: TermJs
 }
 
 
+const dateTerm = { termId: "ix:deadline", version: 1, valueType: "date" } as const;
+
+function isDate(value: string): boolean {
+  return checkTermValue(dateTerm, value) === undefined;
+}
+
 export function checkTermLimit(limit: TermLimit): string | undefined {
   switch (limit.kind) {
     case "money-max":
@@ -154,9 +161,9 @@ export function checkTermLimit(limit: TermLimit): string | undefined {
         ? undefined
         : "money-min needs a currency and 0 <= min <= ask";
     case "date-by":
-      return limit.ask <= limit.latest ? undefined : "date-by needs ask on or before latest";
+      return isDate(limit.ask) && isDate(limit.latest) && limit.ask <= limit.latest ? undefined : "date-by needs real YYYY-MM-DD dates with ask on or before latest";
     case "date-from":
-      return limit.ask >= limit.earliest ? undefined : "date-from needs ask on or after earliest";
+      return isDate(limit.ask) && isDate(limit.earliest) && limit.ask >= limit.earliest ? undefined : "date-from needs real YYYY-MM-DD dates with ask on or after earliest";
     case "integer-range":
       return Number.isSafeInteger(limit.min) && Number.isSafeInteger(limit.max) && Number.isSafeInteger(limit.ask) && limit.min <= limit.ask && limit.ask <= limit.max
         ? undefined
