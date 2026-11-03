@@ -333,6 +333,35 @@ describe("mock poster and worker", () => {
     expect(redactFreeText("金額は180000円。期限は2026-11-20です。")).toBe("金額は180000円。期限は2026-11-20です。");
   });
 
+  it("keeps dates, postal codes, times, and part numbers that start with zero", () => {
+    expect(redactFreeText("納期は2026-01-05です")).toBe("納期は2026-01-05です");
+    expect(redactFreeText("2026.01.05まで")).toBe("2026.01.05まで");
+    expect(redactFreeText("2026ー01ー05")).toBe("2026ー01ー05");
+    expect(redactFreeText("〒060-0001 札幌")).toBe("〒060-0001 札幌");
+    expect(redactFreeText("作業時間 09.00-18.00")).toBe("作業時間 09.00-18.00");
+    expect(redactFreeText("型番 SKU-0123-45")).toBe("型番 SKU-0123-45");
+    expect(redactFreeText("01-02-03 のロット番号")).toBe("01-02-03 のロット番号");
+    expect(redactFreeText("初稿は2026-01-05、修正版は2026.02.10までに提出")).toBe(
+      "初稿は2026-01-05、修正版は2026.02.10までに提出",
+    );
+    expect(redactFreeText("2026-01-05 03-1234-5678")).toBe("2026-01-05 [contact-removed]");
+  });
+
+  it("redacts parenthesized area codes, spaced or slashed separators, and encoded dots", () => {
+    expect(redactFreeText("連絡は03(1234)5678まで")).toBe("連絡は[contact-removed]まで");
+    expect(redactFreeText("090(1234)5678")).toBe("[contact-removed]");
+    expect(redactFreeText("(090)-1234-5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090 - 1234 - 5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090 ー 1234 ー 5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090/1234/5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090〜1234〜5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090~1234~5678")).toBe("[contact-removed]");
+    expect(redactFreeText("TEL09012345678")).toBe("TEL[contact-removed]");
+    expect(redactFreeText("taro&#x40;example&#46;com")).toBe("[contact-removed]");
+    expect(redactFreeText("taro@example&#x2e;com")).toBe("[contact-removed]");
+    expect(redactFreeText("taro%40example.com")).toBe("[contact-removed]");
+  });
+
   it("redacts contacts in proposal credentials before a human sees them", async () => {
     const clock = clockAt(sampleNow);
     const board = createTestBoard(clock);

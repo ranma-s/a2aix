@@ -73,10 +73,10 @@ function visualMarks(value: string): readonly Mark[] {
       break;
     }
     const width = code > 0xffff ? 2 : 1;
-    const entity = atEntityWidth(value, index);
-    if (entity > 0) {
-      segment.push({ visual: "@", origin: index, width: entity });
-      index += entity;
+    const entity = encodedMark(value, index);
+    if (entity !== undefined) {
+      segment.push({ visual: entity.visual, origin: index, width: entity.width });
+      index += entity.width;
       continue;
     }
     if (reverseOpeners.has(code)) {
@@ -102,12 +102,26 @@ function visualMarks(value: string): readonly Mark[] {
   return marks;
 }
 
-function atEntityWidth(value: string, index: number): number {
-  const match = /^&(?:amp;)*(?:#(?:0*64(?![0-9]+;)|x0*40(?![0-9a-f]+;))|commat);?/i.exec(value.slice(index));
-  if (match === null) {
-    return 0;
+const encodedMarks: readonly { readonly pattern: RegExp; readonly visual: string }[] = [
+  { pattern: /^&(?:amp;)*(?:#(?:0*64(?![0-9]+;)|x0*40(?![0-9a-f]+;))|commat);?/i, visual: "@" },
+  { pattern: /^&(?:amp;)*(?:#(?:0*46(?![0-9]+;)|x0*2e(?![0-9a-f]+;))|period);?/i, visual: "." },
+  { pattern: /^%40/i, visual: "@" },
+  { pattern: /^%2e/i, visual: "." },
+];
+
+function encodedMark(value: string, index: number): { readonly visual: string; readonly width: number } | undefined {
+  const char = value[index];
+  if (char !== "&" && char !== "%") {
+    return undefined;
   }
-  return match[0].length;
+  const rest = value.slice(index, index + 32);
+  for (const entry of encodedMarks) {
+    const match = entry.pattern.exec(rest);
+    if (match !== null) {
+      return { visual: entry.visual, width: match[0].length };
+    }
+  }
+  return undefined;
 }
 
 function contactSpans(visual: string, marks: readonly Mark[]): readonly Span[] {
@@ -116,29 +130,123 @@ function contactSpans(visual: string, marks: readonly Mark[]): readonly Span[] {
     /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
     /[a-z0-9._%+-]+\s*(?:@|\(at\)|\[at\]|\bat\b)\s*[a-z0-9-]+(?:\s*(?:\.|\(dot\)|\[dot\]|\bdot\b)\s*[a-z0-9-]+)+/gi,
     /\+\d{1,3}(?:[\s().-]*\d){6,14}/g,
-    /\(\d{1,4}\)\s*\d{1,4}(?:[ .-]\d{2,4})+/g,
-    /\(0\d{1,4}\)\s*\d{6,8}(?![0-9])/g,
-    /\b0\d{1,4}(?:[ .-]\d{1,4}){1,3}\b/g,
-    /\b0\d{9,10}\b/g,
   ];
+  for (const span of phoneSpans(visual)) {
+    pushSpan(found, marks, span.start, span.end);
+  }
   for (const pattern of patterns) {
     for (const match of visual.matchAll(pattern)) {
-      const from = match.index;
-      const text = match[0];
-      if (text.length === 0) {
-        continue;
+      if (match[0].length > 0) {
+        pushSpan(found, marks, match.index, match.index + match[0].length);
       }
-      const startMark = marks[from];
-      const endMark = marks[from + text.length - 1];
-      if (startMark === undefined || endMark === undefined) {
-        continue;
-      }
-      const start = Math.min(startMark.origin, endMark.origin);
-      const last = startMark.origin <= endMark.origin ? endMark : startMark;
-      found.push({ start, end: last.origin + last.width });
     }
   }
   return mergeSpans(found);
+}
+
+function pushSpan(found: Span[], marks: readonly Mark[], from: number, to: number): void {
+  const startMark = marks[from];
+  const endMark = marks[to - 1];
+  if (startMark === undefined || endMark === undefined) {
+    return;
+  }
+  const start = Math.min(startMark.origin, endMark.origin);
+  const last = startMark.origin <= endMark.origin ? endMark : startMark;
+  found.push({ start, end: last.origin + last.width });
+}
+
+const phoneSeparators = new Set([" ", ".", "-", "/", "~"]);
+const phoneDigitCounts = new Set([10, 11]);
+const phoneMaxGroups = 5;
+const phoneMaxGap = 3;
+
+function isDigit(char: string | undefined): boolean {
+  return char !== undefined && char >= "0" && char <= "9";
+}
+
+function phoneMayStart(visual: string, index: number): boolean {
+  const previous = visual[index - 1];
+  if (isDigit(previous)) {
+    return false;
+  }
+  if (previous !== undefined && previous !== " " && phoneSeparators.has(previous) && isDigit(visual[index - 2])) {
+    return false;
+  }
+  const char = visual[index];
+  if (char === "0") {
+    return true;
+  }
+  return char === "(" && isDigit(visual[index + 1]);
+}
+
+function phoneSpans(visual: string): readonly Span[] {
+  const spans: Span[] = [];
+  let index = 0;
+  while (index < visual.length) {
+    const end = phoneMayStart(visual, index) ? phoneEnd(visual, index) : undefined;
+    if (end === undefined) {
+      index += 1;
+      continue;
+    }
+    spans.push({ start: index, end });
+    index = end;
+  }
+  return spans;
+}
+
+function phoneEnd(visual: string, start: number): number | undefined {
+  const leadingParen = visual[start] === "(";
+  if (leadingParen && visual[start + 1] !== "0") {
+    const close = visual.indexOf(")", start);
+    if (close < 0 || close - start > 5) {
+      return undefined;
+    }
+  }
+  let cursor = start;
+  let digits = 0;
+  let groups = 0;
+  let open = false;
+  let best: number | undefined;
+  while (cursor < visual.length && groups < phoneMaxGroups) {
+    let gap = 0;
+    while (cursor < visual.length && gap <= phoneMaxGap) {
+      const char = visual[cursor];
+      if (char === "(" && !open) {
+        open = true;
+      } else if (char === undefined || !phoneSeparators.has(char)) {
+        break;
+      }
+      cursor += 1;
+      gap += 1;
+    }
+    if (gap > phoneMaxGap || !isDigit(visual[cursor])) {
+      break;
+    }
+    if (groups === 0 && !leadingParen && visual[cursor] !== "0") {
+      break;
+    }
+    const groupStart = cursor;
+    while (isDigit(visual[cursor])) {
+      cursor += 1;
+    }
+    const groupLength = cursor - groupStart;
+    if (groupLength > 11) {
+      break;
+    }
+    digits += groupLength;
+    groups += 1;
+    if (open && visual[cursor] === ")") {
+      open = false;
+      cursor += 1;
+    }
+    if (digits > 11) {
+      break;
+    }
+    if (!open && phoneDigitCounts.has(digits)) {
+      best = cursor;
+    }
+  }
+  return best;
 }
 
 function mergeSpans(spans: readonly Span[]): readonly Span[] {
@@ -182,6 +290,7 @@ const foldedCodePoints = new Map<number, string>([
   [0xff65, "."],
   [0xfe6b, "@"],
   [0x3000, " "],
+  [0x301c, "~"],
 ]);
 
 function foldChar(code: number): string {
