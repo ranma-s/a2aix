@@ -119,4 +119,37 @@ describe("mock agents negotiating term by term", () => {
     expect(result.session.phase).toBe("no_deal");
     expect(result.session.reason).toBe("rejected");
   });
+
+  it("refuses to start with a mandate whose opening ask is outside its own range", () => {
+    expect(() =>
+      runTermTrial(
+        trial({
+          client: {
+            party: "client",
+            mandate: { ...clientMandate, "ix:deadline": { kind: "date-by", ask: "2027-06-01", latest: "2026-12-20" } },
+            human: "approve",
+          },
+        }),
+      ),
+    ).toThrow(/ix:deadline/);
+    expect(() =>
+      runTermTrial(
+        trial({
+          worker: {
+            party: "worker",
+            mandate: { ...workerMandate, "ix:revision-limit": { kind: "integer-range", ask: 9, min: 0, max: 3 } },
+            human: "approve",
+          },
+        }),
+      ),
+    ).toThrow(/ix:revision-limit/);
+  });
+
+  it("never fixes a value outside either side's mandate", () => {
+    const result = runTermTrial(trial());
+    const deadline = fixedValue(result, "ix:deadline");
+    expect(typeof deadline === "string" && deadline <= "2026-12-20" && deadline >= "2026-12-15").toBe(true);
+    const revisions = fixedValue(result, "ix:revision-limit");
+    expect(typeof revisions === "number" && revisions >= 1 && revisions <= 2).toBe(true);
+  });
 });

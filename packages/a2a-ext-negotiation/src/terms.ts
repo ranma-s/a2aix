@@ -260,7 +260,8 @@ export const webSiteSheet: TermSheet = {
 };
 
 const datePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
-const datetimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const datetimePattern = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+const kindCodePattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const currencyPattern = /^[A-Z]{3}$/;
 const mediaTypePattern = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
@@ -371,11 +372,12 @@ function checkCountList(value: TermJson): string | undefined {
     if (
       !isObject(item) ||
       !hasOnlyKeys(item, ["code", "n"]) ||
-      !isText(item["code"]) ||
+      typeof item["code"] !== "string" ||
+      !kindCodePattern.test(item["code"]) ||
       seen.has(item["code"]) ||
       !isCount(item["n"], 1)
     ) {
-      return "each count needs a distinct code and n of 1 or more";
+      return "each count needs a distinct lowercase kind code (a-z, 0-9, -) and n of 1 or more";
     }
     seen.add(item["code"]);
   }
@@ -459,10 +461,48 @@ export function checkTermDefinition(definition: TermDefinition): string | undefi
   if (!termValueTypes.includes(definition.valueType)) {
     return "valueType is not known";
   }
-  if ((definition.valueType === "code" || definition.valueType === "codes") && definition.codes !== undefined && definition.codes.length === 0) {
-    return "a code list must not be empty";
+  if (definition.valueType === "code" || definition.valueType === "codes") {
+    if (definition.codes === undefined || definition.codes.length === 0) {
+      return "a code or codes term needs a non-empty code list";
+    }
+    if (new Set(definition.codes).size !== definition.codes.length || !definition.codes.every((code) => code.trim().length > 0)) {
+      return "the code list must hold distinct non-empty codes";
+    }
+  } else if (definition.codes !== undefined) {
+    return "only code and codes terms carry a code list";
+  }
+  if (!hasOnlyKeys(definitionFields(definition), definitionKeys)) {
+    return "a term definition has an unknown field";
   }
   return undefined;
+}
+
+const definitionKeys = ["termId", "version", "valueType", "unit", "codes", "label"] as const;
+
+function definitionFields(definition: TermDefinition): TermJsonObject {
+  const fields: { [key: string]: TermJson } = {};
+  for (const [key, value] of Object.entries(definition)) {
+    fields[key] = jsonOf(value);
+  }
+  return fields;
+}
+
+function jsonOf(value: unknown): TermJson {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const items: readonly unknown[] = value;
+    return items.map(jsonOf);
+  }
+  if (typeof value === "object") {
+    const out: { [key: string]: TermJson } = {};
+    for (const [key, child] of Object.entries(value)) {
+      out[key] = jsonOf(child);
+    }
+    return out;
+  }
+  return null;
 }
 
 export function openTermSession(input: {
@@ -551,6 +591,10 @@ export function applyTermMessage(session: TermSession, message: TermMessage, clo
   if (Number.isNaN(expires) || Number.isNaN(now) || expires <= now) {
     return refuse("message is expired or has no valid expiresAt");
   }
+  const shape = checkEnvelope(message);
+  if (shape !== undefined) {
+    return refuse(shape);
+  }
   const verification: string = message.signature.verification;
   if (verification !== signatureVerification) {
     return refuse("signature verification is deferred");
@@ -563,6 +607,26 @@ export function applyTermMessage(session: TermSession, message: TermMessage, clo
     return result;
   }
   return { ok: true, session: { ...result.session, transcript: [...session.transcript, message] } };
+}
+
+const approvalDecisions = ["approve", "reject", "revise"] as const;
+
+function checkEnvelope(message: TermMessage): string | undefined {
+  const type: string = message.type;
+  const from: string = message.from;
+  if (!termMessageTypes.some((known) => known === type)) {
+    return "unknown message type";
+  }
+  if (from !== "client" && from !== "worker") {
+    return "from must be client or worker";
+  }
+  if (message.type === "TermApproval") {
+    const decision: string = message.decision;
+    if (!approvalDecisions.some((known) => known === decision)) {
+      return "decision must be approve, reject, or revise";
+    }
+  }
+  return undefined;
 }
 
 function step(session: TermSession, message: TermMessage): TermResult {
@@ -613,6 +677,10 @@ function applyPropose(session: TermSession, message: TermProposeMessage): TermRe
   }
   const counters = term.status === "proposed" ? term.counters + 1 : term.counters;
   if (counters > session.roundLimitPerTerm) {
+    if (!term.required) {
+      const dropped: TermState = { definition: term.definition, required: false, status: "dropped", counters: term.counters };
+      return { ok: true, session: { ...session, terms: replaceTerm(session, dropped) } };
+    }
     return {
       ok: true,
       session: { ...session, phase: "no_deal", reason: "round_limit" },
@@ -735,7 +803,22 @@ export function buildTermAgreement(session: TermSession, agreementId: string, tr
   };
 }
 
+const agreementKeys = ["agreementId", "jobId", "sheet", "addedTerms", "terms", "transcriptHash"] as const;
+const sheetRefKeys = ["sheetId", "version", "sha256"] as const;
+const fixedTermKeys = ["termId", "value"] as const;
+
 export function sameTermAgreement(left: TermAgreement, right: TermAgreement): boolean {
+  const received = jsonOf(right);
+  if (
+    !isObject(received) ||
+    !hasOnlyKeys(received, agreementKeys) ||
+    !isObject(received["sheet"]) ||
+    !hasOnlyKeys(received["sheet"], sheetRefKeys) ||
+    !isArray(received["terms"]) ||
+    !received["terms"].every((term) => isObject(term) && hasOnlyKeys(term, fixedTermKeys))
+  ) {
+    return false;
+  }
   return (
     left.agreementId === right.agreementId &&
     left.jobId === right.jobId &&
@@ -746,7 +829,7 @@ export function sameTermAgreement(left: TermAgreement, right: TermAgreement): bo
     left.addedTerms.length === right.addedTerms.length &&
     left.addedTerms.every((definition, index) => {
       const peer = right.addedTerms[index];
-      return peer !== undefined && definition.termId === peer.termId && definition.version === peer.version && definition.valueType === peer.valueType;
+      return peer !== undefined && sameTermValue(definitionFields(definition), definitionFields(peer));
     }) &&
     left.terms.length === right.terms.length &&
     left.terms.every((term, index) => {

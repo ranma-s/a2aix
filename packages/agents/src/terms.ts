@@ -141,6 +141,43 @@ function documentsMatch(held: { readonly [path: string]: string }, value: TermJs
   });
 }
 
+const currencyPattern = /^[A-Z]{3}$/;
+
+export function checkTermLimit(limit: TermLimit): string | undefined {
+  switch (limit.kind) {
+    case "money-max":
+      return currencyPattern.test(limit.currency) && Number.isSafeInteger(limit.ask) && Number.isSafeInteger(limit.max) && limit.ask >= 0 && limit.ask <= limit.max
+        ? undefined
+        : "money-max needs a currency and 0 <= ask <= max";
+    case "money-min":
+      return currencyPattern.test(limit.currency) && Number.isSafeInteger(limit.ask) && Number.isSafeInteger(limit.min) && limit.min >= 0 && limit.ask >= limit.min
+        ? undefined
+        : "money-min needs a currency and 0 <= min <= ask";
+    case "date-by":
+      return limit.ask <= limit.latest ? undefined : "date-by needs ask on or before latest";
+    case "date-from":
+      return limit.ask >= limit.earliest ? undefined : "date-from needs ask on or after earliest";
+    case "integer-range":
+      return Number.isSafeInteger(limit.min) && Number.isSafeInteger(limit.max) && Number.isSafeInteger(limit.ask) && limit.min <= limit.ask && limit.ask <= limit.max
+        ? undefined
+        : "integer-range needs min <= ask <= max";
+    case "one-of":
+      return limit.values.length > 0 ? undefined : "one-of needs at least one value";
+    case "documents-held":
+      return undefined;
+  }
+}
+
+export function checkTermMandate(mandate: TermMandate): string | undefined {
+  for (const [termId, limit] of Object.entries(mandate)) {
+    const problem = checkTermLimit(limit);
+    if (problem !== undefined) {
+      return `${termId}: ${problem}`;
+    }
+  }
+  return undefined;
+}
+
 function preferred(limit: TermLimit): TermJson | undefined {
   switch (limit.kind) {
     case "money-max":
@@ -210,7 +247,7 @@ function decideTerm(config: TermAgentConfig, term: TermState, clock: Clock): Tur
         return { escalation: { party: config.party, termId, reason: "documents_mismatch" } };
       }
       const offer = concession(limit, term.value);
-      if (offer === undefined) {
+      if (offer === undefined || !withinLimit(limit, offer)) {
         return { escalation: { party: config.party, termId, reason: "outside_mandate" } };
       }
       return { message: { ...base, type: "TermCounter", termId, value: offer } };
@@ -220,7 +257,13 @@ function decideTerm(config: TermAgentConfig, term: TermState, clock: Clock): Tur
         return undefined;
       }
       const value = preferred(limit);
-      return value === undefined ? undefined : { message: { ...base, type: "TermPropose", termId, value } };
+      if (value === undefined) {
+        return undefined;
+      }
+      if (!withinLimit(limit, value)) {
+        return { escalation: { party: config.party, termId, reason: "outside_mandate" } };
+      }
+      return { message: { ...base, type: "TermPropose", termId, value } };
     }
     case "fixed":
     case "dropped":
@@ -253,6 +296,12 @@ function nextTurn(config: TermAgentConfig, session: TermSession, clock: Clock): 
 }
 
 export function runTermTrial(input: TermTrialInput): TermTrialResult {
+  for (const config of [input.client, input.worker]) {
+    const problem = checkTermMandate(config.mandate);
+    if (problem !== undefined) {
+      throw new Error(`${config.party} mandate is not usable: ${problem}`);
+    }
+  }
   const opened = openTermSession({
     jobId: input.jobId,
     sheet: input.sheet,
