@@ -36,11 +36,36 @@
 | `code` | `codeList` の中の1つ | `"application/pdf"` |
 | `codes` | `codeList` の中の複数 | `["application/pdf","text/html"]` |
 | `count` | 種類コードと数の組の一覧 | `[{"code":"web-page","n":5}]` |
-| `textRef` | 人が読む文書の SHA-256 と置き場所。機械は中身を読まない | `{"sha256":"…","mediaType":"text/markdown"}` |
+| `textRef` | 人が読む文書1つの SHA-256。機械は中身を読まない | `{"sha256":"…","mediaType":"text/markdown","bytes":4210}` |
+| `documents` | ファイルの組の目録と、その SHA-256（2.1） | `{"manifestSha256":"…","files":[…]}` |
 
 「未定」「要相談」は、どの型でも書けない。値がなければ、その項目はまだ確定していないだけである。
 
 `textRef` は、機械で比べられない取り決め（デザインの方向性など）を、文書の指紋として固定するための逃げ道。文書の中身は合意しても、機械はその良し悪しを判定しない。
+
+### 2.1 仕様書などのファイルを合意する（`documents`）
+
+仕事の初期仕様書のように、1つまたは複数のファイルを合意するための型。IX はファイルの本体を保存しない。保存するのはファイルごとの SHA-256 と、それをまとめた目録の SHA-256 だけである。
+
+ファイルの1件:
+
+| 欄 | 意味 |
+| --- | --- |
+| `path` | 目録の中での名前（例: `spec/requirements.pdf`）。`/` 区切り、重複不可 |
+| `sha256` | ファイルのバイト列そのものの SHA-256（小文字16進） |
+| `bytes` | ファイルの大きさ（バイト数） |
+| `mediaType` | ファイルの種類（例: `application/pdf`） |
+
+目録（manifest）は `{"files": [...]}` で、`files` を `path` の順に並べる。`manifestSha256` は目録の JCS の SHA-256 である。値として合意するのは目録全体で、`valueHash` も目録を含む値から計算する。ファイルが何個あっても、確定させる指紋は1つになる。
+
+規則:
+
+1. ファイルの受け渡しは IX の外で行う（直接送る、共有ストレージなど）。置き場所の URL を `note` に書いてもよいが、機械は置き場所を信用しない。
+2. 受け取った側のエージェントは、手元のファイルから SHA-256 を自分で計算し、目録と一致したときだけ `TermAccept` を送る。一致しなければ受けない。
+3. 合意したあとでファイルを直したときは、新しい目録を `TermReopen` と `TermCounter` で出す。前の目録も履歴に残る。
+4. ハッシュはファイルのバイト列そのものに対するもので、1バイトでも違えば別のファイルになる。開いて保存し直すだけでも変わることがある。合意するファイルは、PDF など保存し直されにくい形を勧める。
+5. 双方が、合意したファイルの本体を自分で保管する。IX が持つのは指紋だけなので、両方がファイルをなくすと、中身は取り戻せない。指紋は「手元のファイルが合意したものと同じか」を確かめるためにある。
+6. 指紋から中身は読めない。ただし、中身を推測できる小さなファイル（短い文面だけ、など）は、候補を総当たりすれば当てられることがある。秘密にしたい短い文書は、ランダムな文字列を足したファイルにして合意する案がある（11章）。
 
 ## 3. 項目表（term sheet）
 
@@ -75,6 +100,7 @@
 | `web:cms` | 任意 | `code` |
 | `web:hosting-included` | 任意 | `boolean` |
 | `web:design-brief` | 任意 | `textRef` |
+| `ix:initial-spec` | 任意 | `documents`（初期仕様書の一式） |
 
 依頼票（`JobPosting`）は、使う項目表の `sheetId` と `sha256` を書く。発注側がすでに決めている項目は、その値を書いておける（12章の例）。
 
@@ -191,6 +217,9 @@
 - 項目どうしの依存（例: `web:cms` を決めたら `web:hosting-included` が必須になる）を表すか。最初の版では表さない案。
 - 往復の上限を、項目ごとにするか、交渉全体と両方にするか。
 - 同じ交渉の中で、項目表の版を上げてよいか。最初の版では上げない案。
+- `ix:initial-spec` を共通の核に入れて、どの仕事でも任意で使えるようにするか。
+- 推測されやすい短い文書の指紋を守るため、ランダムな文字列（ソルト）の付け方を決めるか。指紋が個人情報にあたるかは弁護士の確認事項と重なる。
+- 1つのファイルの大きさや、目録のファイル数に上限を設けるか。
 
 ## 12. 例: Web サイト制作の交渉
 
@@ -220,6 +249,12 @@
 受注側  TermAccept   web:page-count     valueHash=…        → fixed
 受注側  TermPropose  ix:deadline        "2026-12-20"
 発注側  TermAccept   ix:deadline        valueHash=…        → fixed
+発注側  TermPropose  ix:initial-spec    {"manifestSha256":"9f2c…","files":[
+                                          {"path":"requirements.pdf","sha256":"a41b…","bytes":182344,"mediaType":"application/pdf"},
+                                          {"path":"sitemap.png","sha256":"07de…","bytes":52011,"mediaType":"image/png"}]}
+        （ファイル本体は IX の外で受注側に渡す）
+受注側  （手元の2ファイルの SHA-256 を計算し、一致を確認）
+受注側  TermAccept   ix:initial-spec    valueHash=…        → fixed
 発注側  TermPropose  ix:acceptance-window {"value":7,"unit":"day"}
 受注側  TermAccept   ix:acceptance-window valueHash=…      → fixed
 受注側  TermAdd      x-studio:photo-shoot  (boolean, 任意)
