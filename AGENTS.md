@@ -4,7 +4,7 @@ Rules for agents working on IX. Japanese is the director's language. The table i
 
 Read `docs/spec/ix-spec-v0.3.md`, section `交渉の拡張仕様（案 v0.3）`, before changing protocol packages. The business numbers above that section are not requirements. `docs/team.md` names who must look at a change.
 
-This revision is the foundation, plus the negotiation phase machine in `@ix/a2a-ext-negotiation`. Do not implement publish, query, subscribe, wire negotiation, mandates, approval cryptography, transcripts, inclusion proofs, or MCP tools. The phase machine is pure logic: typed messages, an injected clock, and a signature placeholder that is not verified. Do not add a server to make the verification skill look runnable.
+This revision is the foundation, the negotiation phase machine in `@ix/a2a-ext-negotiation`, A2A-Extensions activation in `@ix/protocol-core`, and an in-process publish/query/subscribe relay. `@ix/node` takes an injected event store and does not import `@ix/adapters`. `@ix/adapters` provides the in-memory store and `createLocalRelay`. Event `id` and `sig` are unverified placeholders. Do not implement a listening server, wire negotiation, mandates, approval cryptography, transcripts, inclusion proofs, MCP tools, JCS, JWS, or signature checks. Do not add a server to make the verification skill look runnable.
 
 ## Rules
 
@@ -39,14 +39,15 @@ These are not auto-merged, even when CI is green. Stop and name them in the PR. 
 | `packages/jcs` | core | The only JCS function. Stub. |
 | `packages/config` | core | `open` or `closed`. |
 | `packages/identity` | core | Refusal for key operations. No keys. |
-| `packages/protocol-core` | core | The four extension URIs. |
+| `packages/protocol-core` | core | The four extension URIs and A2A-Extensions activation. Exact match. No version substitution. |
+| `packages/distribution` | core | Event shape, tag filters, and the store port. No hash and no signature check. |
 | `packages/log` | core | Record-kind names and a refusal for inclusion proofs. |
 | `packages/a2a-ext-*` | core | Profile-extension stubs, plus the negotiation phase machine. Negotiation depends on the other three. The machine does not sign, hash, or enforce a mandate. |
-| `packages/node` | app | How `open` and `closed` differ. No port. |
+| `packages/node` | app | In-process relay. `open` accepts public publish. `closed` refuses it. No port. |
 | `packages/ledger` | app | Recognizes log record kinds. Does not write a chain. |
 | `packages/approval-app` | app | Refuses to sign. This is not `@ix/a2a-ext-approval`. |
 | `packages/conformance` | suite | Six pending items. |
-| `packages/adapters` | adapter | May sit outside the core. Nothing may depend on it. |
+| `packages/adapters` | adapter | In-memory event store and `createLocalRelay`. Nothing may depend on it. |
 | `deploy/` | — | Example configs only. |
 | `vectors/` | — | Reserved. Empty of fixtures on purpose. |
 | `fixtures/guardrails/` | — | Violating dummies for lint and dependency direction. Excluded from the build. |

@@ -65,6 +65,12 @@ importers:
       '@ix/config':
         specifier: workspace:*
         version: link:../config
+      '@ix/distribution':
+        specifier: workspace:*
+        version: link:../distribution
+      '@ix/node':
+        specifier: workspace:*
+        version: link:../node
 
   packages/approval-app:
     dependencies:
@@ -79,6 +85,8 @@ importers:
       '@ix/protocol-core':
         specifier: workspace:*
         version: link:../protocol-core
+
+  packages/distribution: {}
 
   packages/identity: {}
 
@@ -97,6 +105,9 @@ importers:
       '@ix/config':
         specifier: workspace:*
         version: link:../config
+      '@ix/distribution':
+        specifier: workspace:*
+        version: link:../distribution
 
   packages/protocol-core: {}
 

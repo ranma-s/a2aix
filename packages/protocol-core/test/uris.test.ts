@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { extensionUris, protocolCoreStatus } from "../src/index.js";
 
 describe("protocol-core", () => {
-  it("is a stub", () => {
-    expect(protocolCoreStatus).toBe("stub");
+  it("owns the four profile extension URIs", () => {
+    expect(protocolCoreStatus).toBe("extensions");
   });
 
   it("names the four profile extensions", () => {

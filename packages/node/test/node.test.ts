@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { describeNode, nodeStatus } from "../src/index.js";
 
 describe("node", () => {
-  it("is a stub", () => {
-    expect(nodeStatus).toBe("stub");
+  it("is an in-process relay and still has no listening port", () => {
+    expect(nodeStatus).toBe("local_relay");
   });
 
   it("treats open as a public exchange and closed as a private one", () => {
