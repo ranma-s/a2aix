@@ -30,8 +30,9 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 - 手元だけの試験。`deploy/local/compose.yaml` は `127.0.0.1` だけを聞き、ポートを公開しません。検証の `drive` も、同じ住所だけを起動して、終わったら止めます。
 - pnpm の TypeScript モノレポ。コア、アプリ、アダプタ、適合スイートをパッケージに分けてあります。
 - 依存の向きを CI で検査します。コアからアダプタへは戻れません。
-- JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。中身は未実装で、呼ぶと失敗します。テストベクトルは TODO です。
-- 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。
+- JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。JSON でない値とプロキシは拒否します。回線上の JSON は、その前に `parseJson` で読み、重複キーと安全整数の外の整数を拒否します。入れ子の上限 64 は、この実装の上限です。配列の幅に上限はありません。
+- 正規化バイトの SHA-256（小文字の16進）は `@ix/protocol-core` にあります。将来の署名の対象は、トップレベルの `signature` を除いた JCS 文字列（`signingInputExcludingSignature`）です。指紋そのものは署名の対象ではありません。`hashCanonicalBody` は `signature` を消しません。署名の実装はまだありません。
+- 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。JCS とハッシュ方式の変更も、その人の確認が要ります。
 - 適合テスト6項目のうち、署名なしで確かめられる4項目を、範囲を書いたうえで合格にしています。自由文の試験は18件で、名前は結果に残します。残り2項目は未実施です。緑でも、6項目すべてに合格したことにはなりません。
 - 検査を破る見本が `fixtures/guardrails/` にあります。普通のビルドには入れません。`pnpm guardrails` は、見本が失敗することと、許される書き方は成功することを確かめます。
 
@@ -45,8 +46,9 @@ This revision is the foundation, the negotiation phase rules, an in-memory relay
 - A private trial. `deploy/local/compose.yaml` binds `127.0.0.1` and publishes no ports. The verification drive starts that same address and stops it before exiting.
 - A pnpm TypeScript monorepo split into core, app, adapter, and conformance packages.
 - CI rejects a dependency that points the wrong way. Core cannot import adapters.
-- JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. It throws. Test vectors are TODO.
-- Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them.
+- JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. Values that are not JSON, and proxies, are rejected. Wire JSON is read first with `parseJson`, which rejects duplicate keys and integers outside the safe range. The nesting cap of 64 is this implementation's limit. Array length is not capped.
+- SHA-256 of those UTF-8 bytes, lowercase hex, lives in `@ix/protocol-core`. The text a future signature would cover is `signingInputExcludingSignature`: JCS with the top-level `signature` removed. The hash itself is not that text. `hashCanonicalBody` does not remove `signature`. Signing is still absent.
+- Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them. Changes to JCS or the hash also wait for that reviewer.
 - Four of the six conformance items pass inside a recorded limit that does not check signatures. Item 6 names the eighteen free-text cases it ran. The other two stay `pending`. A green run is not a full pass.
 - Violating dummies live in `fixtures/guardrails/` and stay out of the normal build. `pnpm guardrails` requires those dummies to fail and the allowed forms to pass.
 
@@ -91,10 +93,10 @@ node scripts/verify-ix-node.mjs cleanup
 ## レイアウト / Layout
 
 ```
-packages/jcs                  JCS の置き場所（未実装）
+packages/jcs                  JCS（RFC 8785）。正規化はここだけ
 packages/config               open / closed
 packages/identity             鍵操作の拒否。鍵そのものは無い
-packages/protocol-core        拡張 URI 4つと A2A-Extensions
+packages/protocol-core        拡張 URI 4つと、A2A-Extensions、正規化バイトの SHA-256
 packages/distribution          依頼票の形とタグ検索。署名は見ない
 packages/log                   透明性ログのスタブ
 packages/a2a-ext-*             交渉の段階機械。委任範囲・承認・履歴はスタブ
@@ -106,7 +108,7 @@ packages/approval-app          承認アプリのスタブ。署名しない
 packages/adapters              メモリの置き場。他から依存されない
 packages/conformance           適合テスト。4項目は範囲つき合格、2項目は未実施
 deploy/                        設定例と、127.0.0.1 だけの試験
-vectors/                       固定ベクトルの置き場所。中身はまだ無い
+vectors/                       固定ベクトルの説明。実体はパッケージのテスト。鍵は無い
 docs/spec/                     仕様（CC BY 4.0）
 docs/negotiation-states.md     交渉の段階。非エンジニア向け
 docs/distribution.md           依頼票の配り方。非エンジニア向け

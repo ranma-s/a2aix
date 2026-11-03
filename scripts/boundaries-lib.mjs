@@ -30,6 +30,28 @@ const bannedExact = new Set([
 
 const bannedPrefixes = ["@noble/", "@stablelib/", "@transmute/"];
 
+const bannedSigningNames = new Set([
+  "sign",
+  "generateKey",
+  "generateKeyPair",
+  "generateKeyPairSync",
+  "importKey",
+  "exportKey",
+  "deriveKey",
+  "deriveBits",
+  "wrapKey",
+  "unwrapKey",
+  "createSign",
+  "createVerify",
+  "createPrivateKey",
+  "createPublicKey",
+  "createSecretKey",
+  "privateEncrypt",
+  "privateDecrypt",
+  "publicEncrypt",
+  "publicDecrypt",
+]);
+
 const pemLabels = [
   "PRIVATE KEY",
   "RSA PRIVATE KEY",
@@ -76,6 +98,24 @@ function normalize(fileName) {
 
 export function isJcsImplementation(fileName) {
   return normalize(fileName).includes("/packages/jcs/src/");
+}
+
+export function isProtocolHashSource(fileName) {
+  return normalize(fileName).includes("/packages/protocol-core/src/");
+}
+
+function propertyName(node) {
+  if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
+    return node.name.text;
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    node.argumentExpression !== undefined &&
+    ts.isStringLiteral(node.argumentExpression)
+  ) {
+    return node.argumentExpression.text;
+  }
+  return undefined;
 }
 
 export function isTestFile(fileName) {
@@ -226,6 +266,9 @@ function checkSpecifier(violations, specifier, location, context) {
     }
     return;
   }
+  if (specifier === "node:util" && isJcsImplementation(context.fileName)) {
+    return;
+  }
   const externalOk = context.isTest && specifier === "vitest";
   if (!externalOk) {
     add(
@@ -234,6 +277,23 @@ function checkSpecifier(violations, specifier, location, context) {
       `${location}: "${specifier}" is not allowed in ${context.packageName}. Packages import @ix/* packages only. Test files may import vitest.`,
     );
   }
+}
+
+function isProxyProbeImport(node) {
+  if (!ts.isImportDeclaration(node)) {
+    return false;
+  }
+  const clause = node.importClause;
+  if (
+    clause === undefined ||
+    clause.name !== undefined ||
+    clause.namedBindings === undefined ||
+    !ts.isNamedImports(clause.namedBindings)
+  ) {
+    return false;
+  }
+  const names = clause.namedBindings.elements;
+  return names.length === 1 && names[0].name.text === "types" && names[0].propertyName === undefined;
 }
 
 export function evaluateSource(input) {
@@ -264,6 +324,41 @@ export function evaluateSource(input) {
         `${normalize(input.fileName)}:${String(lineOf(source, node))}`,
         context,
       );
+      if (specifier === "node:util" && jcsImplementation && !isProxyProbeImport(node)) {
+        add(
+          violations,
+          "util-import",
+          `${normalize(input.fileName)}:${String(lineOf(source, node))}: node:util in @ix/jcs may only be a static import { types }.`,
+        );
+      }
+    }
+    if (
+      jcsImplementation &&
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "types" &&
+      node.name.text !== "isProxy"
+    ) {
+      add(
+        violations,
+        "util-api",
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}: node:util types may only be used as types.isProxy.`,
+      );
+    }
+    if (
+      jcsImplementation &&
+      ts.isElementAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "types"
+    ) {
+      const key = node.argumentExpression;
+      if (key === undefined || !ts.isStringLiteral(key) || key.text !== "isProxy") {
+        add(
+          violations,
+          "util-api",
+          `${normalize(input.fileName)}:${String(lineOf(source, node))}: node:util types may only be used as types.isProxy.`,
+        );
+      }
     }
     if (ts.isCallExpression(node) && isJsonStringifyCallee(node.expression)) {
       if (!jcsImplementation) {
@@ -272,6 +367,39 @@ export function evaluateSource(input) {
           "json-stringify",
           `${normalize(input.fileName)}:${String(lineOf(source, node))}: JSON.stringify cannot canonicalize. Use canonicalize from @ix/jcs.`,
         );
+      }
+    }
+    const accessed = propertyName(node);
+    if (accessed !== undefined && bannedSigningNames.has(accessed)) {
+      add(
+        violations,
+        "signing-api",
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}: ".${accessed}" is a signing or key operation. Those stay refused.`,
+      );
+    }
+    if (ts.isCallExpression(node)) {
+      const called = propertyName(unwrap(node.expression));
+      if (called === "digest") {
+        const location = `${normalize(input.fileName)}:${String(lineOf(source, node))}`;
+        if (!isProtocolHashSource(input.fileName)) {
+          add(
+            violations,
+            "digest-site",
+            `${location}: SHA-256 digest is only allowed in packages/protocol-core/src.`,
+          );
+        }
+        const algorithm = node.arguments[0];
+        if (
+          algorithm === undefined ||
+          !ts.isStringLiteral(algorithm) ||
+          algorithm.text !== "SHA-256"
+        ) {
+          add(
+            violations,
+            "digest-algorithm",
+            `${location}: digest algorithm must be the string literal "SHA-256".`,
+          );
+        }
       }
     }
     if (
@@ -648,6 +776,11 @@ function fixturePolicy() {
   return {
     packages: {
       "@ix/jcs": { dir: "packages/jcs", layer: "core", dependsOn: [] },
+      "@ix/protocol-core": {
+        dir: "packages/protocol-core",
+        layer: "core",
+        dependsOn: ["@ix/jcs"],
+      },
       "@ix/config": { dir: "packages/config", layer: "core", dependsOn: [] },
       "@ix/log": { dir: "packages/log", layer: "core", dependsOn: [] },
       "@ix/node": { dir: "packages/node", layer: "app", dependsOn: ["@ix/config"] },
@@ -917,6 +1050,83 @@ export function runSelfTest() {
   cases += 1;
   assertClean(
     failures,
+    "protocol-core may digest SHA-256",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'export const digest = crypto.subtle.digest("SHA-256", new Uint8Array());\n',
+      "@ix/protocol-core",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "SHA-1 digest is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'export const digest = crypto.subtle.digest("SHA-1", new Uint8Array());\n',
+      "@ix/protocol-core",
+      [],
+    ),
+    "digest-algorithm",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "digest outside protocol-core is rejected",
+    sourceCase(
+      "/virtual/packages/jcs/src/index.ts",
+      'export const digest = crypto.subtle.digest("SHA-256", new Uint8Array());\n',
+      "@ix/jcs",
+      [],
+    ),
+    "digest-site",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "digest in a test is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/test/hash.test.ts",
+      'import { expect, it } from "vitest";\nit("no", () => { crypto.subtle.digest("SHA-256", new Uint8Array()); });\n',
+      "@ix/protocol-core",
+      [],
+    ),
+    "digest-site",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "subtle.sign is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'export const signed = crypto.subtle.sign("x", new Uint8Array());\n',
+      "@ix/protocol-core",
+      [],
+    ),
+    "signing-api",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "string-keyed exportKey is rejected",
+    sourceCase(
+      "/virtual/packages/identity/src/index.ts",
+      'export const exported = crypto.subtle["exportKey"]("raw");\n',
+      "@ix/config",
+      [],
+    ),
+    "signing-api",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
     "jcs may define canonicalize",
     sourceCase(
       "/virtual/packages/jcs/src/index.ts",
@@ -951,6 +1161,57 @@ export function runSelfTest() {
       [],
     ),
     "undeclared",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "jcs may import node:util types for isProxy",
+    sourceCase(
+      "/virtual/packages/jcs/src/canonicalize.ts",
+      'import { types } from "node:util";\nexport const proxy = types.isProxy;\n',
+      "@ix/jcs",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "node:util outside jcs is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'import { types } from "node:util";\nexport const proxy = types.isProxy;\n',
+      "@ix/protocol-core",
+      [],
+    ),
+    "external-import",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "node:util import other than types is rejected",
+    sourceCase(
+      "/virtual/packages/jcs/src/canonicalize.ts",
+      'import { promisify } from "node:util";\nexport const wait = promisify;\n',
+      "@ix/jcs",
+      [],
+    ),
+    "util-import",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "node:util types.isMap is rejected",
+    sourceCase(
+      "/virtual/packages/jcs/src/canonicalize.ts",
+      'import { types } from "node:util";\nexport const map = types.isMap({});\n',
+      "@ix/jcs",
+      [],
+    ),
+    "util-api",
   );
 
   cases += 1;

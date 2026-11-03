@@ -21,3 +21,13 @@ export type {
   IgnoredReason,
   MessageExtensionCheck,
 } from "./header.js";
+export { CanonicalHashError } from "./hash-error.js";
+export {
+  canonicalBodyHash,
+  hashCanonicalBody,
+  hashExcludingSignature,
+  hashExcludingSignatureJson,
+  signingInputExcludingSignature,
+  signingInputFromJson,
+  verifyCanonicalBodyHash,
+} from "./hash.js";
