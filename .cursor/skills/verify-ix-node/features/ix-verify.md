@@ -22,7 +22,7 @@ There is no screen. Drive prints one JSON object from the localhost trial. `sche
 
 ## Gotchas
 
-- Do not implement JCS, JWS, or a prevHash hash here. PR #3 is still unmerged and needs a human security reviewer.
+- Do not implement JWS or a prevHash rule here. JCS and SHA-256 live in `@ix/jcs` and `@ix/protocol-core` (PR #3). Wiring them into prevHash is a human door.
 - A schema rejection of `verification: "verified"` is a shape rule. It is not a signature verification.
 - Currency is any non-empty string at this layer. The mock codec still accepts only JPY. The trial messages are JPY.
 - Replay can reach `agreed` while every deferred check stays `deferred`. Do not describe that as a checked contract.
