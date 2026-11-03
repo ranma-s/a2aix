@@ -1,5 +1,6 @@
 import { apply, openNegotiation } from "@ix/a2a-ext-negotiation";
 import type {
+  AgreementDraftMessage,
   Clock,
   HumanDecision,
   Money,
@@ -9,7 +10,7 @@ import type {
 import { isDue } from "@ix/distribution";
 import type { JsonObject, StoredEvent } from "@ix/distribution";
 import type { JobBoard } from "./board.js";
-import { posterAllows, workerAllows } from "./bounds.js";
+import { posterAllows, sameMoney, workerAllows } from "./bounds.js";
 import {
   buildApproval,
   buildCounter,
@@ -28,6 +29,7 @@ import {
   negotiationKind,
   posterIssuer,
   unverifiedSig,
+  unverifiedTranscript,
   workerIssuer,
 } from "./kinds.js";
 import { sampleProposalNote } from "./sample.js";
@@ -214,6 +216,9 @@ function createSide(input: SideInput): MockSide {
         remember(read.reason === "not_negotiation" ? "bad_message" : read.reason, event.id);
         continue;
       }
+      if (read.message.type === "AgreementDraft" && !acceptableDraft(read.message)) {
+        continue;
+      }
       const outcome = apply(session, toEvent(read.message), input.clock);
       if (!outcome.ok) {
         remember("not_applied", event.id);
@@ -229,6 +234,34 @@ function createSide(input: SideInput): MockSide {
         draftHash = read.message.transcriptHash;
       }
     }
+  }
+
+  function allowsPrice(price: Money): boolean {
+    if (input.party === "client") {
+      return input.posterBound !== undefined && posterAllows(input.posterBound, price);
+    }
+    if (input.workerBound === undefined) {
+      return false;
+    }
+    const hours = posted === undefined ? input.job.hoursPerWeek : posted.hoursPerWeek;
+    const scope = posted === undefined ? input.job.scope : posted.scope;
+    return workerAllows(input.workerBound, price, hours, scope);
+  }
+
+  function acceptableDraft(draft: AgreementDraftMessage): boolean {
+    if (draft.transcriptHash !== unverifiedTranscript(draft.price.amount)) {
+      remember("bad_message", "agreement amount is not bound into the linkage");
+      return false;
+    }
+    if (!allowsPrice(draft.price)) {
+      remember("outside_mandate", "the agreement is outside the bound");
+      return false;
+    }
+    if (latest !== undefined && !sameMoney(latest, draft.price)) {
+      remember("outside_mandate", "the agreement amount differs from the offer");
+      return false;
+    }
+    return true;
   }
 
   function tickDeadline(detail: string): void {
@@ -268,7 +301,7 @@ function createSide(input: SideInput): MockSide {
     }
     if (!jobSettled) {
       jobSettled = true;
-      if (!posterAllows(bound, input.job.budgetMax)) {
+      if (!posterAllows(bound, input.job.budgetMax) || !posterAllows(bound, input.job.budgetMin)) {
         remember("outside_mandate", "the job budget is above the poster maximum");
         return;
       }
@@ -302,6 +335,11 @@ function createSide(input: SideInput): MockSide {
     }
     if (session.phase === "negotiating" && session.draftPending && !draftSettled) {
       if (latest === undefined) {
+        return;
+      }
+      if (!allowsPrice(latest)) {
+        remember("outside_mandate", "the draft would leave the bound");
+        draftSettled = true;
         return;
       }
       draftSettled = true;
@@ -345,6 +383,19 @@ function createSide(input: SideInput): MockSide {
 
   async function publishApproval(): Promise<void> {
     if (session.phase !== "awaiting_approval" || approvalSettled || draftHash === undefined) {
+      return;
+    }
+    const draft = session.draft;
+    if (
+      !allowsPrice(draft.price) ||
+      draft.transcriptHash !== unverifiedTranscript(draft.price.amount) ||
+      (latest !== undefined && !sameMoney(latest, draft.price))
+    ) {
+      remember(
+        allowsPrice(draft.price) ? "bad_message" : "outside_mandate",
+        "the agreement was not approved",
+      );
+      approvalSettled = true;
       return;
     }
     const already = input.party === "client" ? session.approvals.client : session.approvals.worker;

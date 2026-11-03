@@ -33,5 +33,7 @@ Drive records `conformance: "partial-items-3-5-pass-signatures-pending"`. A gree
 ## Gotchas
 
 - Do not flip item 1, 2, or 6 to pass in the change that writes the suite. A separate verifier has to accept any further flip. Do not delete the limit on a pass.
+- Item 3 rejects non-RFC-3339 dates, non-JPY money, and job posts missing `agentCard`, `budgetMin`, or `requiredSkills`. The agreement placeholder is `transcript-unverified-<amount>`. It is not a digest.
+- Item 4 re-checks that amount before a draft is applied and before approval. An offer exactly at the cap or floor may proceed. One yen outside may not.
 - Passing the suite is not a promise about later operations. The spec says so.
 - Which result to trust is the counterparty agent's decision. Do not add a central allow-list.

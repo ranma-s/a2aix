@@ -10,14 +10,15 @@ import type {
   ProposalMessage,
   UnverifiedSignature,
 } from "@ix/a2a-ext-negotiation";
-import { parseInstant } from "@ix/distribution";
 import type { JsonObject, JsonValue } from "@ix/distribution";
 import { extensionUris, negotiateExtensions } from "@ix/protocol-core";
 import {
   credentialPlaceholder,
   signatureMaterial,
-  transcriptPlaceholder,
+  specCurrency,
+  unverifiedTranscript,
 } from "./kinds.js";
+import { isRfc3339 } from "./time.js";
 import type { MockJob } from "./types.js";
 
 export type NegotiationMessage =
@@ -84,7 +85,7 @@ export function buildDraft(input: {
     type: "AgreementDraft",
     author: "client",
     agreementId: `agr-${input.job.jobId}`,
-    transcriptHash: transcriptPlaceholder,
+    transcriptHash: unverifiedTranscript(input.price.amount),
     scope: input.job.scope,
     deliverables: input.job.deliverables,
     price: input.price,
@@ -172,10 +173,15 @@ function placeholderSignature(): UnverifiedSignature {
 function writeJob(job: MockJob): JsonObject {
   return {
     jobId: job.jobId,
+    agentCard: job.agentCard,
     title: job.title,
+    description: job.description,
     scope: job.scope,
     deliverables: writeStrings(job.deliverables),
+    budgetMin: writeMoney(job.budgetMin),
     budgetMax: writeMoney(job.budgetMax),
+    requiredSkills: writeStrings(job.requiredSkills),
+    signature: writeSignature(job.signature),
     maxRoundTrips: job.maxRoundTrips,
     expiresAt: job.expiresAt,
     hoursPerWeek: job.hoursPerWeek,
@@ -281,24 +287,34 @@ function readJob(value: JsonValue | undefined): MockJob | undefined {
     return undefined;
   }
   const jobId = readRequiredText(value["jobId"]);
+  const agentCard = readCard(value["agentCard"]);
   const title = readRequiredText(value["title"]);
+  const description = readRequiredText(value["description"]);
   const scope = readRequiredText(value["scope"]);
   const deliverables = readStringList(value["deliverables"], 1);
+  const budgetMin = readMoney(value["budgetMin"]);
   const budgetMax = readMoney(value["budgetMax"]);
+  const requiredSkills = readStringList(value["requiredSkills"], 1);
   const maxRoundTrips = readCount(value["maxRoundTrips"]);
   const expiresAt = readInstantText(value["expiresAt"]);
   const hoursPerWeek = readCount(value["hoursPerWeek"]);
-  const deadline = readRequiredText(value["deadline"]);
+  const deadline = readInstantText(value["deadline"]);
   const acceptanceCriteria = readRequiredText(value["acceptanceCriteria"]);
   const revisionLimit = readCount(value["revisionLimit"]);
   const localRules = readRequiredText(value["localRules"]);
   const localTerms = readLocalTerms(value["localTerms"]);
+  const signature = readSignature(value["signature"]);
   if (
     jobId === undefined ||
+    agentCard === undefined ||
     title === undefined ||
+    description === undefined ||
     scope === undefined ||
     deliverables === undefined ||
+    budgetMin === undefined ||
     budgetMax === undefined ||
+    budgetMin.amount > budgetMax.amount ||
+    requiredSkills === undefined ||
     maxRoundTrips === undefined ||
     maxRoundTrips < 1 ||
     expiresAt === undefined ||
@@ -307,16 +323,21 @@ function readJob(value: JsonValue | undefined): MockJob | undefined {
     acceptanceCriteria === undefined ||
     revisionLimit === undefined ||
     localRules === undefined ||
-    localTerms === undefined
+    localTerms === undefined ||
+    signature === undefined
   ) {
     return undefined;
   }
   return {
     jobId,
+    agentCard,
     title,
+    description,
     scope,
     deliverables,
+    budgetMin,
     budgetMax,
+    requiredSkills,
     maxRoundTrips,
     expiresAt,
     hoursPerWeek,
@@ -325,6 +346,7 @@ function readJob(value: JsonValue | undefined): MockJob | undefined {
     revisionLimit,
     localRules,
     localTerms,
+    signature,
   };
 }
 
@@ -352,7 +374,7 @@ function readProposal(value: JsonObject): ProposalMessage | undefined {
   const jobId = readRequiredText(value["jobId"]);
   const scope = readRequiredText(value["scope"]);
   const price = readMoney(value["price"]);
-  const deadline = readRequiredText(value["deadline"]);
+  const deadline = readInstantText(value["deadline"]);
   const availability = readHours(value["availability"]);
   const credentials = readStringList(value["credentials"], 1);
   const note = readText(value["note"]);
@@ -427,11 +449,11 @@ function readDraft(value: JsonObject): AgreementDraftMessage | undefined {
     return undefined;
   }
   const agreementId = readRequiredText(value["agreementId"]);
+  const price = readMoney(value["price"]);
   const transcriptHash = readRequiredText(value["transcriptHash"]);
   const scope = readRequiredText(value["scope"]);
   const deliverables = readStringList(value["deliverables"], 1);
-  const price = readMoney(value["price"]);
-  const deadline = readRequiredText(value["deadline"]);
+  const deadline = readInstantText(value["deadline"]);
   const acceptanceCriteria = readRequiredText(value["acceptanceCriteria"]);
   const revisionLimit = readCount(value["revisionLimit"]);
   const localRules = readRequiredText(value["localRules"]);
@@ -450,7 +472,8 @@ function readDraft(value: JsonObject): AgreementDraftMessage | undefined {
     localRules === undefined ||
     localTerms === undefined ||
     expiresAt === undefined ||
-    signature === undefined
+    signature === undefined ||
+    transcriptHash !== unverifiedTranscript(price.amount)
   ) {
     return undefined;
   }
@@ -473,7 +496,7 @@ function readDraft(value: JsonObject): AgreementDraftMessage | undefined {
 }
 
 function readApproval(value: JsonObject): ApprovalDecisionMessage | undefined {
-  const agreementHash = readRequiredText(value["agreementHash"]);
+  const agreementHash = readLinkage(value["agreementHash"]);
   const party = readParty(value["party"]);
   const decision = readHumanDecision(value["decision"]);
   const comment = readText(value["comment"]);
@@ -510,7 +533,11 @@ function readMoney(value: JsonValue | undefined): Money | undefined {
   const amount = readCount(value["amount"]);
   const currency = readRequiredText(value["currency"]);
   const taxIncluded = value["taxIncluded"];
-  if (amount === undefined || currency === undefined || typeof taxIncluded !== "boolean") {
+  if (
+    amount === undefined ||
+    currency !== specCurrency ||
+    typeof taxIncluded !== "boolean"
+  ) {
     return undefined;
   }
   return { amount, currency, taxIncluded };
@@ -520,7 +547,7 @@ function readLocalTerms(value: JsonValue | undefined): LocalTerms | undefined {
   if (!isJsonObject(value)) {
     return undefined;
   }
-  const paymentDueDate = readRequiredText(value["paymentDueDate"]);
+  const paymentDueDate = readInstantText(value["paymentDueDate"]);
   const ipOwnership = readRequiredText(value["ipOwnership"]);
   if (paymentDueDate === undefined || ipOwnership === undefined) {
     return undefined;
@@ -596,7 +623,24 @@ function readText(value: JsonValue | undefined): string | undefined {
 }
 
 function readInstantText(value: JsonValue | undefined): string | undefined {
-  if (typeof value !== "string" || parseInstant(value) === undefined) {
+  if (typeof value !== "string" || !isRfc3339(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+function readCard(value: JsonValue | undefined): string | undefined {
+  if (typeof value !== "string" || !value.startsWith("https://") || value.includes(" ")) {
+    return undefined;
+  }
+  if (value.length <= "https://".length) {
+    return undefined;
+  }
+  return value;
+}
+
+function readLinkage(value: JsonValue | undefined): string | undefined {
+  if (typeof value !== "string" || !/^transcript-unverified-\d+$/.test(value)) {
     return undefined;
   }
   return value;

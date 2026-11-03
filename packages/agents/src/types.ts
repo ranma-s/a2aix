@@ -1,5 +1,4 @@
-import type { Money, NoDealReason } from "@ix/a2a-ext-negotiation";
-import type { LocalTerms } from "@ix/a2a-ext-negotiation";
+import type { LocalTerms, Money, NoDealReason, UnverifiedSignature } from "@ix/a2a-ext-negotiation";
 
 export const refusalReasons = [
   "outside_mandate",
@@ -20,10 +19,14 @@ export type Refusal = {
 
 export type MockJob = {
   readonly jobId: string;
+  readonly agentCard: string;
   readonly title: string;
+  readonly description: string;
   readonly scope: string;
   readonly deliverables: readonly string[];
+  readonly budgetMin: Money;
   readonly budgetMax: Money;
+  readonly requiredSkills: readonly string[];
   readonly maxRoundTrips: number;
   readonly expiresAt: string;
   readonly hoursPerWeek: number;
@@ -32,6 +35,7 @@ export type MockJob = {
   readonly revisionLimit: number;
   readonly localRules: string;
   readonly localTerms: LocalTerms;
+  readonly signature: UnverifiedSignature;
 };
 
 export type PosterBound = {

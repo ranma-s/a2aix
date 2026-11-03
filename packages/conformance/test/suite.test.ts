@@ -45,7 +45,8 @@ describe("conformance suite", () => {
     ]);
     for (const result of results) {
       if (result.status === "pass") {
-        expect(result.noteJa.includes("署名")).toBe(true);
+        expect(result.noteJa.includes("見ていません")).toBe(true);
+        expect(result.noteJa.includes("検証した")).toBe(false);
       }
     }
   });

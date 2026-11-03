@@ -29,6 +29,10 @@ export function workerAllows(
   return true;
 }
 
+export function sameMoney(left: Money, right: Money): boolean {
+  return left.amount === right.amount && sameBasis(left, right);
+}
+
 function sameBasis(left: Money, right: Money): boolean {
   return left.currency === right.currency && left.taxIncluded === right.taxIncluded;
 }

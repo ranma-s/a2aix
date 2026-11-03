@@ -65,9 +65,24 @@ export type ConformanceResult = {
 export async function runConformance(
   openBoard: (now: string) => JobBoard,
 ): Promise<readonly ConformanceResult[]> {
-  await proveMessages(openBoard);
-  await proveMandate(openBoard);
+  const messages = await proveMessages(openBoard);
+  const mandate = await proveMandate(openBoard);
   await proveDeadline(openBoard);
+  if (
+    messages.fuzzRejected < 13 ||
+    !messages.handAccepted ||
+    !messages.sawJobFields ||
+    !messages.sawLinkedDraft ||
+    !mandate.exactCap ||
+    !mandate.exactFloor ||
+    !mandate.oneAboveCap ||
+    !mandate.oneBelowFloor ||
+    !mandate.posterBlocked250000 ||
+    !mandate.workerBlocked1 ||
+    !mandate.laterRoundBlocked
+  ) {
+    throw new Error("conformance evidence does not support the recorded passes");
+  }
   return conformanceItems.map((item) => describe(item));
 }
 
@@ -89,15 +104,15 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
       return pass(
         item,
         "structure_only_signature_unverified",
-        "Required fields, money, and time match the type rules. The signature slot must say deferred. JWS, JCS, and prevHash digests are not checked.",
-        "必須項目、金額、日時が型に合うことと、署名欄が deferred であることを見ました。JWS、JCS、prevHash のハッシュは見ていません。署名の正しさは未確認です。",
+        "Dates are RFC 3339, money is integer JPY, and a job post includes the card address, both budget ends, and required skills. The agreement placeholder contains the amount and is not a hash. Signatures are not checked.",
+        "日付は RFC 3339、金額は円の整数、依頼票にはカードの住所と予算の下限と上限と必要なスキルがあります。合意のつなぎ文字には金額を含めますが、ハッシュではありません。署名は見ていません。",
       );
     case "proposals-stay-inside-mandate":
       return pass(
         item,
         "local_numeric_bound_signature_unverified",
-        "The mock keeps a private numeric bound and does not send an offer outside it. The mandate extension stays a stub. No mandate signature is checked.",
-        "模試の係は、自分の数値の上限・下限の外には提案も受諾も出しません。委任の拡張はスタブのままです。委任状の署名は見ていません。",
+        "The mock re-checks its private numeric bound on the opening offer, on an exact edge, on a later round, and before approval. A different amount is not the same agreement. The mandate extension stays a stub. No mandate signature is checked.",
+        "模試は、最初の提案だけでなく、ちょうど上限と下限、次の往復、合意案、承認の前にも、自分の数値の範囲を見ます。金額が違えば、同じ合意としては受けません。委任の拡張はスタブのままです。委任状の署名は見ていません。",
       );
     case "responds-within-deadline":
       return pass(

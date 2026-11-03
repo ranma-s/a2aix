@@ -1,5 +1,5 @@
 export type { JobBoard } from "./board.js";
-export { posterAllows, workerAllows } from "./bounds.js";
+export { posterAllows, sameMoney, workerAllows } from "./bounds.js";
 export {
   buildApproval,
   buildCounter,
@@ -21,10 +21,12 @@ export {
   negotiationKind,
   posterIssuer,
   signatureMaterial,
-  transcriptPlaceholder,
+  specCurrency,
   unverifiedSig,
+  unverifiedTranscript,
   workerIssuer,
 } from "./kinds.js";
-export { clockAt, sampleJob, sampleJobWith, sampleNow, samplePosterBound, sampleProposalNote, sampleWorkerBound } from "./sample.js";
+export { clockAt, sampleCard, sampleJob, sampleJobWith, sampleNow, samplePosterBound, sampleProposalNote, sampleWorkerBound } from "./sample.js";
+export { isRfc3339 } from "./time.js";
 export type { MockJob, PosterBound, Refusal, RefusalReason, SideSnapshot, WorkerBound } from "./types.js";
 export { refusalReasons } from "./types.js";
