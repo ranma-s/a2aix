@@ -33,3 +33,13 @@ export { isRfc3339 } from "./time.js";
 export { redactFreeText } from "./redact.js";
 export type { MockJob, PosterBound, Refusal, RefusalReason, SideSnapshot, WorkerBound } from "./types.js";
 export { refusalReasons } from "./types.js";
+export { runTermTrial, withinLimit } from "./terms.js";
+export type {
+  HumanDecision as TermHumanDecision,
+  TermAgentConfig,
+  TermLimit,
+  TermMandate,
+  TermTrialEscalation,
+  TermTrialInput,
+  TermTrialResult,
+} from "./terms.js";

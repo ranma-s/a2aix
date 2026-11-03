@@ -1,6 +1,6 @@
 # 項目ごとに決める交渉と、合意の形式（案）
 
-状態: 案。ディレクターの方針（2026-11-03）を仕様の形にしたもの。まだ実装しない。`ix-spec-v0.3.md` の「メッセージの型」と「流れとTaskの状態」を置き換える候補。
+状態: 案。ディレクターの方針（2026-11-03）を仕様の形にしたもの。項目の状態の機械と模試のエージェントは T18 で実装した（13章）。`ix-spec-v0.3.md` の「メッセージの型」と「流れとTaskの状態」を置き換える候補。
 
 ## 1. 方針
 
@@ -126,7 +126,8 @@
 | --- | --- | --- |
 | `open` | まだ誰も値を出していない | `proposed`、`dropped` |
 | `proposed` | 片方が値を出した | `fixed`（相手が `TermAccept`）、`proposed`（相手が `TermCounter`。出した側が入れ替わる） |
-| `fixed` | 双方が同じ値に同意した | `proposed`（`TermReopen` に相手が `TermAccept` したとき） |
+| `fixed` | 双方が同じ値に同意した | `reopen_requested`（`TermReopen`） |
+| `add_requested` `drop_requested` `reopen_requested` | 片方が足す・落とす・開き直すことを求めた | 相手の `TermAccept` で `open`、`dropped`、`open` |
 | `dropped` | 任意の項目を、双方が決めないことにした | — |
 
 規則:
@@ -268,3 +269,15 @@
 ```
 
 `x-studio:photo-shoot` のように交渉の中で足された項目が、多くの合意で使われれば、次の版の `ix:sheet/web-site` に入る候補になる。
+
+## 13. 実装の状態（T18）
+
+- `@ix/a2a-ext-negotiation` の `openTermSession` と `applyTermMessage` が、項目ごとの状態と交渉全体の段階を進める。純粋な関数で、時計は外から渡す。
+- 共通の核 `ix:core/1`（`coreSheet`）と、Web サイト制作の項目表 `ix:sheet/web-site/1`（`webSiteSheet`）を持つ。`ix:initial-spec` は共通の核の任意の項目にした。
+- 開き直しは、相手の同意で `open` に戻す。値を出し直すのは、そのあとの `TermPropose` である。
+- `@ix/agents` の `runTermTrial` は、項目ごとの委任範囲を持つ発注側と受注側の模試が、1項目ずつ確定させて合意案を作り、双方の人間（台本）が承認するまでを動かす。範囲が重ならない項目は往復の上限で `no_deal`、仕様書のファイルの指紋が手元と合わないときは人間に戻す。
+- まだしていないこと:
+  - `valueHash`、`prevHash`、`transcriptHash`、`manifestSha256` は未確認の文字列（`deferred`）。値の一致は、値そのものを比べて確かめている。PR #3 の JCS と SHA-256 がマージされたら、指紋で比べる。
+  - 署名は確かめない（`deferred`）。
+  - 模試は中継（relay）を通さず、同じプロセスの中でメッセージを渡している。中継を通すのは次の段階。
+  - 新しいメッセージの型は、まだ中継のイベントの種類として登録していない。

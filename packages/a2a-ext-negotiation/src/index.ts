@@ -53,6 +53,53 @@ export type {
   UnverifiedSignature,
 } from "./model.js";
 export { transitionTable } from "./table.js";
+export {
+  applyTermMessage,
+  buildTermAgreement,
+  checkTermDefinition,
+  checkTermValue,
+  coreSheet,
+  coreTerms,
+  counterpartOf,
+  durationUnits,
+  initialSpecTerm,
+  openTermSession,
+  readyForAgreement,
+  sameTermAgreement,
+  sameTermValue,
+  termMessageTypes,
+  termNoDealReasons,
+  termPhases,
+  termStatuses,
+  termValueTypes,
+  valueHashVerification,
+  webSiteSheet,
+} from "./terms.js";
+export type {
+  DealDeclineMessage,
+  FixedTerm,
+  PresetTerm,
+  SheetRef,
+  TermAcceptMessage,
+  TermAddMessage,
+  TermAgreement,
+  TermAgreementDraftMessage,
+  TermApprovalMessage,
+  TermDefinition,
+  TermDropMessage,
+  TermJson,
+  TermMessage,
+  TermMessageType,
+  TermNoDealReason,
+  TermPhase,
+  TermProposeMessage,
+  TermResult,
+  TermSession,
+  TermSheet,
+  TermState,
+  TermStatus,
+  TermValueType,
+} from "./terms.js";
 export type { GuardName, TransitionId, TransitionRow } from "./table.js";
 
 export const requiredExtensionUris = [mandateUri, approvalUri, transcriptUri] as const;
