@@ -1,6 +1,7 @@
 import type { Clock } from "./apply.js";
 import type { Party, UnverifiedSignature } from "./model.js";
 import { signatureVerification } from "./model.js";
+import { ianaZoneNames } from "./zones.js";
 
 export type TermJson =
   | null
@@ -302,7 +303,10 @@ function isInvisibleOrControl(code: number): boolean {
     (code >= 0x7f && code <= 0x9f) ||
     (code >= 0x200b && code <= 0x200f) ||
     (code >= 0x202a && code <= 0x202e) ||
+    code === 0x2028 ||
+    code === 0x2029 ||
     (code >= 0x2060 && code <= 0x2069) ||
+    (code >= 0xe0000 && code <= 0xe007f) ||
     invisiblePathCodes.has(code)
   );
 }
@@ -407,10 +411,12 @@ export function checkTermValue(definition: TermDefinition, value: TermJson): str
   }
 }
 
-const zoneNamePattern = /^(?:UTC|[A-Z][A-Za-z_]+(?:\/[A-Za-z0-9_+-]+){1,2})$/;
+export function isZoneName(zone: string): boolean {
+  return ianaZoneNames.some((name) => name === zone);
+}
 
 export function zoneOffsetMinutes(zone: string, instantMs: number): number | undefined {
-  if (!zoneNamePattern.test(zone) || !Number.isFinite(instantMs)) {
+  if (!isZoneName(zone) || !Number.isFinite(instantMs)) {
     return undefined;
   }
   let format: Intl.DateTimeFormat;
@@ -454,7 +460,7 @@ function offsetOf(at: string): number | undefined {
     return 0;
   }
   const match = /([+-])(\d{2}):(\d{2})$/.exec(at);
-  if (match === null) {
+  if (match === null || at.endsWith("-00:00")) {
     return undefined;
   }
   const minutes = Number(match[2]) * 60 + Number(match[3]);

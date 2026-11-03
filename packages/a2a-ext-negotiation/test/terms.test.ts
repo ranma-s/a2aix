@@ -6,10 +6,13 @@ import {
   buildTermAgreement,
   checkTermValue,
   coreSheet,
+  ianaZoneNames,
   initialSpecTerm,
+  isZoneName,
   openTermSession,
   readyForAgreement,
   signatureVerification,
+  tzdbVersion,
   valueHashVerification,
   webSiteSheet,
 } from "../src/index.js";
@@ -363,6 +366,51 @@ describe("term-by-term negotiation", () => {
       expect(checkTermValue(initialSpecTerm, file(bad))).toBeDefined();
     }
     expect(checkTermValue(initialSpecTerm, file("\u304C.pdf"))).toBeUndefined();
+  });
+
+  it("refuses tag characters and line or paragraph separators in file names", () => {
+    const file = (path: string): TermJson => ({ manifestSha256: sha("9"), files: [{ path, sha256: sha("1"), bytes: 1, mediaType: "application/pdf" }] });
+    for (const bad of ["a\u{E0041}b.pdf", "a\u{E0001}.pdf", "a\u{E007F}.pdf", "a\u2028b.pdf", "a\u2029b.pdf"]) {
+      expect(checkTermValue(initialSpecTerm, file(bad))).toBeDefined();
+    }
+    for (const good of ["\u8CC7\u6599\u3000\u7B2C1\u7248.pdf", "\u2764\uFE0F.png", "\uFF76\uFF9E.pdf"]) {
+      expect(checkTermValue(initialSpecTerm, file(good))).toBeUndefined();
+    }
+  });
+
+  it("takes only the one tzdb spelling of a zone and refuses -00:00", () => {
+    const [, deadline] = coreSheet.required;
+    if (deadline === undefined) {
+      throw new Error("core sheet is incomplete");
+    }
+    for (const [at, zone] of [
+      ["2026-12-10T18:00:00+09:00", "Asia/Tokyo"],
+      ["2026-12-10T18:00:00+05:30", "Asia/Kolkata"],
+      ["2026-12-10T18:00:00+07:00", "Asia/Ho_Chi_Minh"],
+      ["2026-12-10T18:00:00+02:00", "Europe/Kyiv"],
+      ["2026-12-10T18:00:00-03:00", "America/Argentina/Buenos_Aires"],
+      ["2026-12-10T18:00:00+01:00", "Europe/Oslo"],
+      ["2026-12-10T09:00:00Z", "UTC"],
+      ["2026-12-10T09:00:00+00:00", "UTC"],
+    ] as const) {
+      expect(checkTermValue(deadline, { at, zone })).toBeUndefined();
+    }
+    for (const [at, zone] of [
+      ["2026-12-10T18:00:00+09:00", "Asia/TOKYO"],
+      ["2026-12-10T18:00:00+09:00", "asia/tokyo"],
+      ["2026-12-10T18:00:00+05:30", "Asia/Calcutta"],
+      ["2026-12-10T01:00:00-08:00", "US/Pacific"],
+      ["2026-12-10T09:00:00Z", "Etc/UTC"],
+      ["2026-12-10T18:00:00+09:00", "Etc/GMT-9"],
+      ["2026-12-10T18:00:00+09:00", "Japan"],
+      ["2026-12-10T09:00:00-00:00", "UTC"],
+    ] as const) {
+      expect(checkTermValue(deadline, { at, zone })).toBeDefined();
+    }
+    expect(isZoneName("Asia/Tokyo")).toBe(true);
+    expect(isZoneName("Asia/Calcutta")).toBe(false);
+    expect(new Set(ianaZoneNames).size).toBe(ianaZoneNames.length);
+    expect(tzdbVersion).toBe("2026e");
   });
 
   it("refuses malformed messages instead of throwing", () => {

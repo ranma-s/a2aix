@@ -53,6 +53,7 @@ export type {
   UnverifiedSignature,
 } from "./model.js";
 export { transitionTable } from "./table.js";
+export { ianaZoneNames, tzdbVersion } from "./zones.js";
 export {
   applyTermMessage,
   buildTermAgreement,
@@ -66,6 +67,7 @@ export {
   initialSpecTerm,
   isCurrencyCode,
   isSafeRelativePath,
+  isZoneName,
   iso4217Currencies,
   openTermSession,
   readyForAgreement,
