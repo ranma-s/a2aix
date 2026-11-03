@@ -1,4 +1,4 @@
-import { canonicalize } from "@ix/jcs";
+import { canonicalize, canonicalizeExcludingSignature, parseJson } from "@ix/jcs";
 import { CanonicalHashError } from "./hash-error.js";
 
 export const canonicalBodyHash = {
@@ -10,8 +10,23 @@ export const canonicalBodyHash = {
 const sha256HexPattern = /^[0-9a-f]{64}$/;
 
 export async function hashCanonicalBody(value: unknown): Promise<string> {
-  const canonical = canonicalize(value);
-  return sha256Hex(new TextEncoder().encode(canonical));
+  return sha256Hex(new TextEncoder().encode(canonicalize(value)));
+}
+
+export function signingInputExcludingSignature(value: unknown): string {
+  return canonicalizeExcludingSignature(value);
+}
+
+export async function hashExcludingSignature(value: unknown): Promise<string> {
+  return sha256Hex(new TextEncoder().encode(signingInputExcludingSignature(value)));
+}
+
+export function signingInputFromJson(text: string): string {
+  return signingInputExcludingSignature(parseJson(text));
+}
+
+export async function hashExcludingSignatureJson(text: string): Promise<string> {
+  return hashExcludingSignature(parseJson(text));
 }
 
 export async function verifyCanonicalBodyHash(

@@ -208,6 +208,16 @@ describe("canonicalize", () => {
     expect(maxCanonicalDepth).toBe(64);
     expect(canonicalize(nestedObjects(64)).startsWith('{"n":')).toBe(true);
     expectRejected(nestedObjects(65), "JCS_DEPTH");
+    let depthError: unknown;
+    try {
+      canonicalize(nestedObjects(65));
+    } catch (error: unknown) {
+      depthError = error;
+    }
+    if (!(depthError instanceof CanonicalizationError)) {
+      throw new Error("expected CanonicalizationError");
+    }
+    expect(depthError.message).toContain("64");
   });
 
   it("accepts a null-prototype object", () => {
@@ -276,6 +286,39 @@ describe("canonicalize", () => {
       },
     };
     expectRejected(converted, "JCS_INVALID_VALUE");
+    const inner = {};
+    Object.defineProperty(inner, "a", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return 1;
+      },
+    });
+    expectRejected({ box: inner }, "JCS_INVALID_VALUE");
+    expect(reads).toBe(0);
+  });
+
+  it("rejects proxies, including a proxy that would change the value on a second read", () => {
+    expectRejected(new Proxy({ a: 1 }, {}), "JCS_INVALID_VALUE");
+    expectRejected(new Proxy([1, 2], {}), "JCS_INVALID_VALUE");
+    expectRejected(new Proxy(Object.create(null), {}), "JCS_INVALID_VALUE");
+    const revoked = Proxy.revocable({ a: 1 }, {});
+    revoked.revoke();
+    expectRejected(revoked.proxy, "JCS_INVALID_VALUE");
+    let reads = 0;
+    const lying = new Proxy(
+      { a: 1 },
+      {
+        get(target, property) {
+          reads += 1;
+          if (property === "a") {
+            return 999;
+          }
+          return target;
+        },
+      },
+    );
+    expectRejected(lying, "JCS_INVALID_VALUE");
     expect(reads).toBe(0);
   });
 });

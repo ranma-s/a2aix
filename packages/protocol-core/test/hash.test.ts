@@ -4,8 +4,13 @@ import {
   CanonicalHashError,
   canonicalBodyHash,
   hashCanonicalBody,
+  hashExcludingSignature,
+  hashExcludingSignatureJson,
+  signingInputExcludingSignature,
+  signingInputFromJson,
   verifyCanonicalBodyHash,
 } from "../src/index.js";
+import { JsonParseError } from "@ix/jcs";
 
 const rfcSample = {
   numbers: [Number("333333333.33333329"), 1e30, 4.5, 2e-3, 0.000000000000000000000000001],
@@ -104,6 +109,30 @@ describe("canonical body hash", () => {
   it("gives one hash to values that differ only by key order", async () => {
     await expect(hashCanonicalBody({ b: 1, a: 2 })).resolves.toBe(
       await hashCanonicalBody({ a: 2, b: 1 }),
+    );
+  });
+
+  it("uses canonical text without the top-level signature as the signing input, not the hash", async () => {
+    const signed = { ...proposal, signature: "sig" };
+    const input = signingInputExcludingSignature(signed);
+    expect(input).toBe(proposalCanonical);
+    expect(input.includes("signature")).toBe(false);
+    expect(/^[0-9a-f]{64}$/.test(input)).toBe(false);
+    const bareHash = await hashCanonicalBody(signed);
+    expect(bareHash).not.toBe(input);
+    expect(bareHash).not.toBe(proposalHash);
+    await expect(hashExcludingSignature(signed)).resolves.toBe(proposalHash);
+    expect(signingInputFromJson('{"signature":"sig","type":"Proposal","jobId":"job-1","note":"weekday","price":{"amount":500000,"currency":"JPY","taxIncluded":true}}')).toBe(
+      proposalCanonical,
+    );
+    await expect(
+      hashExcludingSignatureJson(
+        '{"signature":"sig","note":{"signature":"keep"},"a":1}',
+      ),
+    ).resolves.toBe(await hashCanonicalBody({ a: 1, note: { signature: "keep" } }));
+    await expect(hashExcludingSignatureJson('{"a":1,"a":2}')).rejects.toBeInstanceOf(JsonParseError);
+    await expect(hashExcludingSignatureJson("9007199254740993")).rejects.toBeInstanceOf(
+      JsonParseError,
     );
   });
 

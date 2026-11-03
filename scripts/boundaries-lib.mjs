@@ -265,6 +265,9 @@ function checkSpecifier(violations, specifier, location, context) {
     }
     return;
   }
+  if (specifier === "node:util" && isJcsImplementation(context.fileName)) {
+    return;
+  }
   const externalOk = context.isTest && specifier === "vitest";
   if (!externalOk) {
     add(
@@ -273,6 +276,23 @@ function checkSpecifier(violations, specifier, location, context) {
       `${location}: "${specifier}" is not allowed in ${context.packageName}. Packages import @ix/* packages only. Test files may import vitest.`,
     );
   }
+}
+
+function isProxyProbeImport(node) {
+  if (!ts.isImportDeclaration(node)) {
+    return false;
+  }
+  const clause = node.importClause;
+  if (
+    clause === undefined ||
+    clause.name !== undefined ||
+    clause.namedBindings === undefined ||
+    !ts.isNamedImports(clause.namedBindings)
+  ) {
+    return false;
+  }
+  const names = clause.namedBindings.elements;
+  return names.length === 1 && names[0].name.text === "types" && names[0].propertyName === undefined;
 }
 
 export function evaluateSource(input) {
@@ -303,6 +323,41 @@ export function evaluateSource(input) {
         `${normalize(input.fileName)}:${String(lineOf(source, node))}`,
         context,
       );
+      if (specifier === "node:util" && jcsImplementation && !isProxyProbeImport(node)) {
+        add(
+          violations,
+          "util-import",
+          `${normalize(input.fileName)}:${String(lineOf(source, node))}: node:util in @ix/jcs may only be a static import { types }.`,
+        );
+      }
+    }
+    if (
+      jcsImplementation &&
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "types" &&
+      node.name.text !== "isProxy"
+    ) {
+      add(
+        violations,
+        "util-api",
+        `${normalize(input.fileName)}:${String(lineOf(source, node))}: node:util types may only be used as types.isProxy.`,
+      );
+    }
+    if (
+      jcsImplementation &&
+      ts.isElementAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "types"
+    ) {
+      const key = node.argumentExpression;
+      if (key === undefined || !ts.isStringLiteral(key) || key.text !== "isProxy") {
+        add(
+          violations,
+          "util-api",
+          `${normalize(input.fileName)}:${String(lineOf(source, node))}: node:util types may only be used as types.isProxy.`,
+        );
+      }
     }
     if (ts.isCallExpression(node) && isJsonStringifyCallee(node.expression)) {
       if (!jcsImplementation) {
@@ -1101,6 +1156,57 @@ export function runSelfTest() {
       [],
     ),
     "undeclared",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "jcs may import node:util types for isProxy",
+    sourceCase(
+      "/virtual/packages/jcs/src/canonicalize.ts",
+      'import { types } from "node:util";\nexport const proxy = types.isProxy;\n',
+      "@ix/jcs",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "node:util outside jcs is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'import { types } from "node:util";\nexport const proxy = types.isProxy;\n',
+      "@ix/protocol-core",
+      [],
+    ),
+    "external-import",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "node:util import other than types is rejected",
+    sourceCase(
+      "/virtual/packages/jcs/src/canonicalize.ts",
+      'import { promisify } from "node:util";\nexport const wait = promisify;\n',
+      "@ix/jcs",
+      [],
+    ),
+    "util-import",
+  );
+
+  cases += 1;
+  assertReason(
+    failures,
+    "node:util types.isMap is rejected",
+    sourceCase(
+      "/virtual/packages/jcs/src/canonicalize.ts",
+      'import { types } from "node:util";\nexport const map = types.isMap({});\n',
+      "@ix/jcs",
+      [],
+    ),
+    "util-api",
   );
 
   cases += 1;

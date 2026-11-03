@@ -1,3 +1,5 @@
+import { types } from "node:util";
+
 export const maxCanonicalDepth = 64;
 
 export type CanonicalizationCode = "JCS_INVALID_VALUE" | "JCS_DEPTH" | "JCS_CYCLE";
@@ -13,10 +15,19 @@ export class CanonicalizationError extends Error {
 }
 
 export function canonicalize(value: unknown): string {
-  return serialize(value, new WeakSet(), 0);
+  return serialize(value, new WeakSet(), 0, false);
 }
 
-function serialize(value: unknown, stack: WeakSet<object>, depth: number): string {
+export function canonicalizeExcludingSignature(value: unknown): string {
+  return serialize(value, new WeakSet(), 0, true);
+}
+
+function serialize(
+  value: unknown,
+  stack: WeakSet<object>,
+  depth: number,
+  omitSignature: boolean,
+): string {
   if (value === null) {
     return "null";
   }
@@ -36,7 +47,7 @@ function serialize(value: unknown, stack: WeakSet<object>, depth: number): strin
     case "undefined":
       throw new CanonicalizationError("JCS_INVALID_VALUE", "undefined");
     case "object":
-      return serializeContainer(value, stack, depth);
+      return serializeContainer(value, stack, depth, omitSignature);
     default:
       throw new CanonicalizationError("JCS_INVALID_VALUE", "unsupported");
   }
@@ -56,9 +67,17 @@ function serializeString(value: string): string {
   return JSON.stringify(value);
 }
 
-function serializeContainer(value: object, stack: WeakSet<object>, depth: number): string {
+function serializeContainer(
+  value: object,
+  stack: WeakSet<object>,
+  depth: number,
+  omitSignature: boolean,
+): string {
   if (depth >= maxCanonicalDepth) {
-    throw new CanonicalizationError("JCS_DEPTH", "nesting limit");
+    throw new CanonicalizationError("JCS_DEPTH", "nesting limit 64");
+  }
+  if (types.isProxy(value)) {
+    throw new CanonicalizationError("JCS_INVALID_VALUE", "proxy");
   }
   if (stack.has(value)) {
     throw new CanonicalizationError("JCS_CYCLE", "cycle");
@@ -68,7 +87,7 @@ function serializeContainer(value: object, stack: WeakSet<object>, depth: number
     if (isArray(value)) {
       return serializeArray(value, stack, depth);
     }
-    return serializeObject(value, stack, depth);
+    return serializeObject(value, stack, depth, omitSignature);
   } finally {
     stack.delete(value);
   }
@@ -78,27 +97,24 @@ function isArray(value: object): value is readonly unknown[] {
   return Array.isArray(value);
 }
 
-function serializeArray(
-  value: readonly unknown[],
-  stack: WeakSet<object>,
-  depth: number,
-): string {
-  assertArrayShape(value);
+function serializeArray(value: readonly unknown[], stack: WeakSet<object>, depth: number): string {
+  const elements = captureArray(value);
   const parts: string[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    parts.push(serialize(value[index], stack, depth + 1));
+  for (const element of elements) {
+    parts.push(serialize(element, stack, depth + 1, false));
   }
   return `[${parts.join(",")}]`;
 }
 
-function assertArrayShape(value: readonly unknown[]): void {
+function captureArray(value: readonly unknown[]): readonly unknown[] {
   if ("toJSON" in value) {
     throw new CanonicalizationError("JCS_INVALID_VALUE", "toJSON");
   }
   if (Object.getOwnPropertySymbols(value).length > 0) {
     throw new CanonicalizationError("JCS_INVALID_VALUE", "symbol property");
   }
-  const indexes = new Set<number>();
+  const captured: unknown[] = [];
+  const seen = new Set<number>();
   for (const name of Object.getOwnPropertyNames(value)) {
     if (name === "length") {
       const descriptor = Object.getOwnPropertyDescriptor(value, name);
@@ -110,14 +126,16 @@ function assertArrayShape(value: readonly unknown[]): void {
     if (!isCanonicalIndex(name, value.length)) {
       throw new CanonicalizationError("JCS_INVALID_VALUE", "array property");
     }
-    assertDataProperty(value, name);
-    indexes.add(Number(name));
+    const index = Number(name);
+    captured[index] = readDataValue(value, name);
+    seen.add(index);
   }
   for (let index = 0; index < value.length; index += 1) {
-    if (!indexes.has(index)) {
+    if (!seen.has(index)) {
       throw new CanonicalizationError("JCS_INVALID_VALUE", "sparse array");
     }
   }
+  return captured;
 }
 
 function isCanonicalIndex(name: string, length: number): boolean {
@@ -128,7 +146,12 @@ function isCanonicalIndex(name: string, length: number): boolean {
   return Number.isSafeInteger(index) && index < length;
 }
 
-function serializeObject(value: object, stack: WeakSet<object>, depth: number): string {
+function serializeObject(
+  value: object,
+  stack: WeakSet<object>,
+  depth: number,
+  omitSignature: boolean,
+): string {
   if (
     Object.getPrototypeOf(value) !== Object.prototype &&
     Object.getPrototypeOf(value) !== null
@@ -141,23 +164,42 @@ function serializeObject(value: object, stack: WeakSet<object>, depth: number): 
   if (Object.getOwnPropertySymbols(value).length > 0) {
     throw new CanonicalizationError("JCS_INVALID_VALUE", "symbol property");
   }
-  const names = Object.getOwnPropertyNames(value);
-  for (const name of names) {
+  const rows: { name: string; property: unknown }[] = [];
+  for (const name of Object.getOwnPropertyNames(value)) {
     if (!isWellFormedString(name)) {
       throw new CanonicalizationError("JCS_INVALID_VALUE", "lone surrogate");
     }
-    assertDataProperty(value, name);
+    if (omitSignature && name === "signature") {
+      assertDataProperty(value, name);
+      continue;
+    }
+    rows.push({ name, property: readDataValue(value, name) });
   }
+  rows.sort((left, right) => {
+    if (left.name < right.name) {
+      return -1;
+    }
+    if (left.name > right.name) {
+      return 1;
+    }
+    return 0;
+  });
   const parts: string[] = [];
-  for (const name of [...names].sort()) {
+  for (const row of rows) {
     parts.push(
-      `${JSON.stringify(name)}:${serialize(readDataProperty(value, name), stack, depth + 1)}`,
+      `${JSON.stringify(row.name)}:${serialize(row.property, stack, depth + 1, false)}`,
     );
   }
   return `{${parts.join(",")}}`;
 }
 
-function assertDataProperty(value: object, name: string): void {
+function readDataValue(value: object, name: string): unknown {
+  const descriptor = assertDataProperty(value, name);
+  const property: unknown = descriptor.value;
+  return property;
+}
+
+function assertDataProperty(value: object, name: string): PropertyDescriptor {
   const descriptor = Object.getOwnPropertyDescriptor(value, name);
   if (
     descriptor === undefined ||
@@ -168,15 +210,7 @@ function assertDataProperty(value: object, name: string): void {
   ) {
     throw new CanonicalizationError("JCS_INVALID_VALUE", "property");
   }
-}
-
-function readDataProperty(value: object, name: string): unknown {
-  const descriptor = Object.getOwnPropertyDescriptor(value, name);
-  if (descriptor === undefined || !("value" in descriptor)) {
-    throw new CanonicalizationError("JCS_INVALID_VALUE", "property");
-  }
-  const property: unknown = descriptor.value;
-  return property;
+  return descriptor;
 }
 
 function isWellFormedString(text: string): boolean {

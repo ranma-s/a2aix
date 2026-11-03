@@ -24,7 +24,8 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 
 - pnpm の TypeScript モノレポ。コア、アプリ、アダプタ、適合スイートをパッケージに分けてあります。
 - 依存の向きを CI で検査します。コアからアダプタへは戻れません。
-- JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。JSON でない値は拒否します。正規化バイトの SHA-256（小文字の16進）は `@ix/protocol-core` の `hashCanonicalBody` です。`signature` は消しません。署名そのものはまだありません。
+- JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。JSON でない値とプロキシは拒否します。回線上の JSON は、その前に `parseJson` で読み、重複キーと安全整数の外の整数を拒否します。入れ子の上限 64 は、この実装の上限です。配列の幅に上限はありません。
+- 正規化バイトの SHA-256（小文字の16進）は `@ix/protocol-core` にあります。将来の署名の対象は、トップレベルの `signature` を除いた JCS 文字列（`signingInputExcludingSignature`）です。指紋そのものは署名の対象ではありません。`hashCanonicalBody` は `signature` を消しません。署名の実装はまだありません。
 - 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。JCS とハッシュ方式の変更も、その人の確認が要ります。
 - 適合テスト6項目の置き場所はあります。結果はすべて未実施（`pending`）です。
 
@@ -32,7 +33,8 @@ This revision is the foundation. Protocol behavior is not implemented.
 
 - A pnpm TypeScript monorepo split into core, app, adapter, and conformance packages.
 - CI rejects a dependency that points the wrong way. Core cannot import adapters.
-- JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. Values that are not JSON are rejected. `hashCanonicalBody` in `@ix/protocol-core` is SHA-256 of those UTF-8 bytes, lowercase hex. It does not remove `signature`. Signing is still absent.
+- JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. Values that are not JSON, and proxies, are rejected. Wire JSON is read first with `parseJson`, which rejects duplicate keys and integers outside the safe range. The nesting cap of 64 is this implementation's limit. Array length is not capped.
+- SHA-256 of those UTF-8 bytes, lowercase hex, lives in `@ix/protocol-core`. The text a future signature would cover is `signingInputExcludingSignature`: JCS with the top-level `signature` removed. The hash itself is not that text. `hashCanonicalBody` does not remove `signature`. Signing is still absent.
 - Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them. Changes to JCS or the hash also wait for that reviewer.
 - The six conformance items have a home. Every result is `pending`.
 
