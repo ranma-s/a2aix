@@ -370,6 +370,11 @@ describe("mock poster and worker", () => {
     expect(redactFreeText("09.00-18.00 / 10.00-19.00")).toBe("09.00-18.00 / 10.00-19.00");
     expect(redactFreeText("03-1234-5678 / 090-1234-5678")).toBe("[contact-removed] / [contact-removed]");
     expect(redactFreeText("01-02-03 のロット番号")).toBe("01-02-03 のロット番号");
+    expect(redactFreeText("090-1234-5678-1")).toBe("[contact-removed]-1");
+    expect(redactFreeText("090.1234.5678.9")).toBe("[contact-removed].9");
+    expect(redactFreeText("090-1234-5678/2026")).toBe("[contact-removed]/2026");
+    expect(redactFreeText("1-090-1234-5678-1")).toBe("[contact-removed]-1");
+    expect(redactFreeText("期間 2026/01/05 - 2026/03/31")).toBe("期間 2026/01/05 - 2026/03/31");
   });
 
   it("redacts contacts in proposal credentials before a human sees them", async () => {

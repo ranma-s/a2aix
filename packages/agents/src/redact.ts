@@ -273,7 +273,7 @@ function phoneEnd(visual: string, start: number): number | undefined {
     if (digits > 11) {
       break;
     }
-    if (!open && phoneDigitCounts.has(digits) && !continuesNumber(visual, cursor)) {
+    if (!open && phoneDigitCounts.has(digits) && (groupLength >= 4 || !continuesNumber(visual, cursor))) {
       best = cursor;
     }
   }
