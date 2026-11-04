@@ -1176,3 +1176,128 @@ function applyApproval(session: TermSession, message: TermApprovalMessage): Term
 export function counterpartOf(party: Party): Party {
   return other(party);
 }
+
+export type TermDecodeResult =
+  | { readonly ok: true; readonly message: TermMessage }
+  | { readonly ok: false; readonly reason: string };
+
+function looseText(value: Loose, key: string): string {
+  const field = value[key];
+  return typeof field === "string" ? field : "";
+}
+
+function decodeDefinition(value: unknown): TermDefinition | undefined {
+  if (!isLoose(value) || checkDefinitionShape(value) !== undefined) {
+    return undefined;
+  }
+  const valueType = termValueTypes.find((known) => known === value["valueType"]);
+  const version = value["version"];
+  if (valueType === undefined || typeof version !== "number") {
+    return undefined;
+  }
+  const base: TermDefinition = { termId: looseText(value, "termId"), version, valueType };
+  const unit = value["unit"];
+  const withUnit: TermDefinition = typeof unit === "string" ? { ...base, unit } : base;
+  const codes = looseList(value["codes"]);
+  const withCodes: TermDefinition =
+    codes === undefined ? withUnit : { ...withUnit, codes: codes.filter((code): code is string => typeof code === "string") };
+  const label = value["label"];
+  if (!isLoose(label)) {
+    return withCodes;
+  }
+  const names: { [language: string]: string } = {};
+  for (const [language, text] of Object.entries(label)) {
+    if (typeof text === "string") {
+      names[language] = text;
+    }
+  }
+  return { ...withCodes, label: names };
+}
+
+export function decodeTermMessage(raw: unknown): TermDecodeResult {
+  const problem = checkMessageShape(raw);
+  if (problem !== undefined || !isLoose(raw)) {
+    return { ok: false, reason: problem ?? "a message must be an object" };
+  }
+  const from: Party | undefined = raw["from"] === "client" ? "client" : raw["from"] === "worker" ? "worker" : undefined;
+  const signature = raw["signature"];
+  if (from === undefined || !isLoose(signature) || signature["verification"] !== signatureVerification) {
+    return { ok: false, reason: "from or signature is not acceptable" };
+  }
+  const envelope: Envelope = {
+    from,
+    sentAt: looseText(raw, "sentAt"),
+    expiresAt: looseText(raw, "expiresAt"),
+    prevHash: looseText(raw, "prevHash"),
+    signature: { verification: signatureVerification, material: looseText(signature, "material") },
+  };
+  const termId = looseText(raw, "termId");
+  const note = raw["note"];
+  switch (raw["type"]) {
+    case "TermPropose":
+    case "TermCounter": {
+      const message: TermProposeMessage = {
+        ...envelope,
+        type: raw["type"] === "TermPropose" ? "TermPropose" : "TermCounter",
+        termId,
+        value: jsonOf(raw["value"]),
+      };
+      return { ok: true, message: typeof note === "string" ? { ...message, note } : message };
+    }
+    case "TermAccept": {
+      const message: TermAcceptMessage = { ...envelope, type: "TermAccept", termId, valueHash: valueHashVerification };
+      return { ok: true, message: raw["value"] === undefined ? message : { ...message, value: jsonOf(raw["value"]) } };
+    }
+    case "TermDrop":
+    case "TermReopen":
+      return { ok: true, message: { ...envelope, type: raw["type"] === "TermDrop" ? "TermDrop" : "TermReopen", termId } };
+    case "TermRefuse":
+      return { ok: true, message: { ...envelope, type: "TermRefuse", termId } };
+    case "TermAdd": {
+      const definition = decodeDefinition(raw["definition"]);
+      const required = raw["required"];
+      if (definition === undefined || typeof required !== "boolean") {
+        return { ok: false, reason: "TermAdd needs a definition and required" };
+      }
+      return { ok: true, message: { ...envelope, type: "TermAdd", definition, required } };
+    }
+    case "DealDecline":
+      return { ok: true, message: { ...envelope, type: "DealDecline", reason: looseText(raw, "reason") } };
+    case "TermApproval": {
+      const decision = approvalDecisions.find((known) => known === raw["decision"]);
+      if (decision === undefined) {
+        return { ok: false, reason: "decision must be approve, reject, or revise" };
+      }
+      const reopen = looseList(raw["reopen"]);
+      const base: TermApprovalMessage = { ...envelope, type: "TermApproval", decision };
+      return {
+        ok: true,
+        message: reopen === undefined ? base : { ...base, reopen: reopen.filter((item): item is string => typeof item === "string") },
+      };
+    }
+    case "TermAgreementDraft": {
+      const agreement = raw["agreement"];
+      if (!isLoose(agreement) || !isLoose(agreement["sheet"])) {
+        return { ok: false, reason: "an agreement draft needs an agreement" };
+      }
+      const sheet = agreement["sheet"];
+      const version = sheet["version"];
+      const added = (looseList(agreement["addedTerms"]) ?? []).map(decodeDefinition);
+      const terms = looseList(agreement["terms"]) ?? [];
+      if (typeof version !== "number" || added.some((definition) => definition === undefined)) {
+        return { ok: false, reason: "an agreement draft has a bad sheet or added term" };
+      }
+      const decoded: TermAgreement = {
+        agreementId: looseText(agreement, "agreementId"),
+        jobId: looseText(agreement, "jobId"),
+        sheet: { sheetId: looseText(sheet, "sheetId"), version, sha256: looseText(sheet, "sha256") },
+        addedTerms: added.filter((definition): definition is TermDefinition => definition !== undefined),
+        terms: terms.map((term) => ({ termId: isLoose(term) ? looseText(term, "termId") : "", value: isLoose(term) ? jsonOf(term["value"]) : null })),
+        transcriptHash: looseText(agreement, "transcriptHash"),
+      };
+      return { ok: true, message: { ...envelope, type: "TermAgreementDraft", agreement: decoded } };
+    }
+    default:
+      return { ok: false, reason: "unknown message type" };
+  }
+}

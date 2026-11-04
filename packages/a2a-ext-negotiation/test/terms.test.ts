@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  decodeTermMessage,
   checkTermDefinition,
   deadlineIn,
   applyTermMessage,
@@ -68,6 +69,21 @@ function run(session: TermSession, messages: readonly TermMessage[]): TermSessio
     current = result.session;
   }
   return current;
+}
+
+function plainCopy(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const items: readonly unknown[] = value;
+    return items.map(plainCopy);
+  }
+  if (typeof value === "object" && value !== null) {
+    const out: { [key: string]: unknown } = {};
+    for (const [key, child] of Object.entries(value)) {
+      out[key] = plainCopy(child);
+    }
+    return out;
+  }
+  return value;
 }
 
 const yen = (amount: number): TermJson => ({ amount, currency: "JPY", taxIncluded: true });
@@ -446,5 +462,30 @@ describe("term-by-term negotiation", () => {
     expect(checkTermValue(deadline, { at: "2026-12-10T18:00:00+09:00", zone: "Mars/Olympus" })).toBeDefined();
     expect(checkTermValue(deadline, { at: "2026-12-10T18:00:00", zone: "Asia/Tokyo" })).toBeDefined();
     expect(deadlineIn(Date.parse("2026-12-15T09:00:00Z"), "Asia/Kolkata")).toEqual({ at: "2026-12-15T14:30:00+05:30", zone: "Asia/Kolkata" });
+  });
+
+  it("decodes every message type from plain JSON and refuses broken ones", () => {
+    const negotiated = run(opened(), fixAllCore);
+    const agreement = buildTermAgreement(negotiated, "agr-1", "unverified");
+    if (agreement === undefined) {
+      throw new Error("agreement should be ready");
+    }
+    const messages: TermMessage[] = [
+      ...fixAllCore,
+      { ...envelope("worker"), type: "TermAdd", definition: { termId: "x:color", version: 1, valueType: "code", codes: ["red"], label: { ja: "色" } }, required: false },
+      { ...envelope("client"), type: "TermRefuse", termId: "x:color" },
+      { ...envelope("client"), type: "TermAgreementDraft", agreement },
+      { ...envelope("worker"), type: "TermApproval", decision: "revise", reopen: ["ix:price"] },
+      { ...envelope("worker"), type: "DealDecline", reason: "busy" },
+    ];
+    for (const message of messages) {
+      const raw: unknown = plainCopy(message);
+      const decoded = decodeTermMessage(raw);
+      expect(decoded.ok).toBe(true);
+      expect(decoded.ok ? decoded.message : undefined).toEqual(message);
+    }
+    for (const raw of [null, "x", { type: "TermPropose" }, { ...envelope("worker"), type: "TermApproval", decision: "maybe" }, { ...envelope("worker"), from: "admin", type: "TermRefuse", termId: "x" }]) {
+      expect(decodeTermMessage(raw).ok).toBe(false);
+    }
   });
 });
