@@ -296,6 +296,184 @@ describe("mock poster and worker", () => {
     expect(redactFreeText("金額は180000円。期限は2026-11-20です。")).toBe("金額は180000円。期限は2026-11-20です。");
   });
 
+  it("redacts spaced, dotted, parenthesized, and encoded contacts", () => {
+    expect(redactFreeText("090 1234 5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090.1234.5678")).toBe("[contact-removed]");
+    expect(redactFreeText("(03) 1234-5678")).toBe("[contact-removed]");
+    expect(redactFreeText("+81 (90) 1234-5678")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&#64;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&#x40;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo [at] example [dot] com")).toBe("[contact-removed]");
+  });
+
+  it("redacts unicode dashes, middle dots, tight parentheses, and loose entities", () => {
+    expect(redactFreeText("090‐1234‐5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090–1234–5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090−1234−5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090ー1234ー5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090・1234・5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090･1234･5678")).toBe("[contact-removed]");
+    expect(redactFreeText("(090)12345678")).toBe("[contact-removed]");
+    expect(redactFreeText("（090）12345678")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&#x40example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&#64example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&amp;#64;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&amp;amp;#x40;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo&commat;example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("foo﹫example.com")).toBe("[contact-removed]");
+    expect(redactFreeText("電話は 090‐1234‐5678 まで")).toBe("電話は [contact-removed] まで");
+  });
+
+  it("keeps entities that are not an at sign and text that only looks close", () => {
+    expect(redactFreeText("&#640;")).toBe("&#640;");
+    expect(redactFreeText("&#x400;")).toBe("&#x400;");
+    expect(redactFreeText("(1)200000")).toBe("(1)200000");
+    expect(redactFreeText("2026ー11ー20")).toBe("2026ー11ー20");
+    expect(redactFreeText("デザイン・コーディング")).toBe("デザイン・コーディング");
+    expect(redactFreeText("金額は180000円。期限は2026-11-20です。")).toBe("金額は180000円。期限は2026-11-20です。");
+  });
+
+  it("keeps dates, postal codes, times, and part numbers that start with zero", () => {
+    expect(redactFreeText("納期は2026-01-05です")).toBe("納期は2026-01-05です");
+    expect(redactFreeText("2026.01.05まで")).toBe("2026.01.05まで");
+    expect(redactFreeText("2026ー01ー05")).toBe("2026ー01ー05");
+    expect(redactFreeText("〒060-0001 札幌")).toBe("〒060-0001 札幌");
+    expect(redactFreeText("作業時間 09.00-18.00")).toBe("作業時間 09.00-18.00");
+    expect(redactFreeText("型番 SKU-0123-45")).toBe("型番 SKU-0123-45");
+    expect(redactFreeText("01-02-03 のロット番号")).toBe("01-02-03 のロット番号");
+    expect(redactFreeText("初稿は2026-01-05、修正版は2026.02.10までに提出")).toBe(
+      "初稿は2026-01-05、修正版は2026.02.10までに提出",
+    );
+    expect(redactFreeText("2026-01-05 03-1234-5678")).toBe("2026-01-05 [contact-removed]");
+  });
+
+  it("redacts parenthesized area codes, spaced or slashed separators, and encoded dots", () => {
+    expect(redactFreeText("連絡は03(1234)5678まで")).toBe("連絡は[contact-removed]まで");
+    expect(redactFreeText("090(1234)5678")).toBe("[contact-removed]");
+    expect(redactFreeText("(090)-1234-5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090 - 1234 - 5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090 ー 1234 ー 5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090/1234/5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090〜1234〜5678")).toBe("[contact-removed]");
+    expect(redactFreeText("090~1234~5678")).toBe("[contact-removed]");
+    expect(redactFreeText("TEL09012345678")).toBe("TEL[contact-removed]");
+    expect(redactFreeText("taro&#x40;example&#46;com")).toBe("[contact-removed]");
+    expect(redactFreeText("taro@example&#x2e;com")).toBe("[contact-removed]");
+    expect(redactFreeText("taro%40example.com")).toBe("[contact-removed]");
+  });
+
+  it("redacts a phone behind a short prefix and keeps spaced date and time ranges", () => {
+    expect(redactFreeText("電話1-090-1234-5678")).toBe("電話[contact-removed]");
+    expect(redactFreeText("連絡は 1-090-1234-5678 まで")).toBe("連絡は [contact-removed] まで");
+    expect(redactFreeText("12-090-1234-5678")).toBe("[contact-removed]");
+    expect(redactFreeText("期間 01/05/2026 - 03/31/2026")).toBe("期間 01/05/2026 - 03/31/2026");
+    expect(redactFreeText("09.00-18.00 / 10.00-19.00")).toBe("09.00-18.00 / 10.00-19.00");
+    expect(redactFreeText("03-1234-5678 / 090-1234-5678")).toBe("[contact-removed] / [contact-removed]");
+    expect(redactFreeText("01-02-03 のロット番号")).toBe("01-02-03 のロット番号");
+    expect(redactFreeText("090-1234-5678-1")).toBe("[contact-removed]-1");
+    expect(redactFreeText("090.1234.5678.9")).toBe("[contact-removed].9");
+    expect(redactFreeText("090-1234-5678/2026")).toBe("[contact-removed]/2026");
+    expect(redactFreeText("1-090-1234-5678-1")).toBe("[contact-removed]-1");
+    expect(redactFreeText("期間 2026/01/05 - 2026/03/31")).toBe("期間 2026/01/05 - 2026/03/31");
+  });
+
+  it("redacts contacts in proposal credentials before a human sees them", async () => {
+    const clock = clockAt(sampleNow);
+    const board = createTestBoard(clock);
+    const poster = createPoster({
+      board,
+      clock,
+      job: sampleJob,
+      bound: samplePosterBound,
+      human: "approve",
+    });
+    await poster.step();
+    const proposal = buildProposal({
+      job: sampleJob,
+      price: sampleJob.budgetMax,
+      prevHash: "m-0001",
+      note: "",
+    });
+    const published = await board.publish({
+      id: "m-9000",
+      issuer: "did:example:worker",
+      kind: negotiationKind,
+      tags: [[jobTag, sampleJob.jobId]],
+      createdAt: sampleNow,
+      expiresAt: sampleJob.expiresAt,
+      sig: "unverified-placeholder",
+      body: negotiationRecord(
+        { ...proposal, credentials: ["実績は (090)12345678 か foo&amp;#64;example.com へ"] },
+        mockExtensionsHeader,
+      ),
+    });
+    expect(published.ok).toBe(true);
+    await poster.step();
+    const shown = poster.shownFreeText().join("\n");
+    expect(shown.includes("12345678")).toBe(false);
+    expect(shown.includes("example.com")).toBe(false);
+    expect(shown.includes("実績は [contact-removed] か [contact-removed] へ")).toBe(true);
+  });
+
+  it("leaves prices, dates, and budget numbers in place", () => {
+    expect(redactFreeText("200000")).toBe("200000");
+    expect(redactFreeText("150000")).toBe("150000");
+    expect(redactFreeText("180000")).toBe("180000");
+    expect(redactFreeText("2026-11-20")).toBe("2026-11-20");
+    expect(redactFreeText("2026-12-10T00:00:00.000Z")).toBe("2026-12-10T00:00:00.000Z");
+    expect(redactFreeText("予算の下限は150000、上限は180000、その外は200000。期限は2026-11-20です。")).toBe(
+      "予算の下限は150000、上限は180000、その外は200000。期限は2026-11-20です。",
+    );
+  });
+
+  it("scrubs the new contact shapes in human-facing text, not only in the agreement", async () => {
+    const description =
+      "電話は 090 1234 5678 と 090.1234.5678 と (03) 1234-5678 と +81 (90) 1234-5678。メールは foo&#64;example.com と foo&#x40;example.com と foo [at] example [dot] com。予算200000、下限150000、上限180000、期限2026-12-10。";
+    const clock = clockAt(sampleNow);
+    const board = createTestBoard(clock);
+    const report = await runPosterWorker({
+      board,
+      clock,
+      job: sampleJobWith({
+        description,
+        deliverables: ["構成案（PDF）", "090 1234 5678", "foo&#64;example.com"],
+      }),
+      posterBound: samplePosterBound,
+      workerBound: sampleWorkerBound,
+      humans,
+    });
+    const shown = report.poster.shownFreeText.join("\n");
+    const draft = report.events
+      .map((event) => readNegotiationRecord(event.body))
+      .find((read) => read.ok && read.message.type === "AgreementDraft");
+    for (const secret of [
+      "090 1234 5678",
+      "090.1234.5678",
+      "(03) 1234-5678",
+      "+81 (90) 1234-5678",
+      "foo&#64;example.com",
+      "foo&#x40;example.com",
+      "foo [at] example [dot] com",
+      "example.com",
+    ]) {
+      expect(shown.includes(secret)).toBe(false);
+    }
+    expect(shown.includes("[contact-removed]")).toBe(true);
+    expect(shown.includes("200000")).toBe(true);
+    expect(shown.includes("150000")).toBe(true);
+    expect(shown.includes("180000")).toBe(true);
+    expect(shown.includes("2026-12-10")).toBe(true);
+    expect(draft?.ok).toBe(true);
+    if (draft !== undefined && draft.ok && draft.message.type === "AgreementDraft") {
+      const joined = draft.message.deliverables.join("\n");
+      expect(joined.includes("090 1234 5678")).toBe(false);
+      expect(joined.includes("foo&#64;example.com")).toBe(false);
+      expect(joined.includes("example.com")).toBe(false);
+      expect(joined.includes("構成案（PDF）")).toBe(true);
+      expect(draft.message.price.amount).toBe(180000);
+    }
+  });
+
   it("does not copy a deliverable contact into the agreement", () => {
     const job = sampleJobWith({
       deliverables: ["構成案（PDF）", "tanaka@example.com", "09012345678"],
