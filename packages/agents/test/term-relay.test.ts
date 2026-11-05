@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { signatureVerification } from "@ix/a2a-ext-negotiation";
 import type { TermJson } from "@ix/a2a-ext-negotiation";
-import { jobKind, jobTag, mockExtensionsHeader, negotiationKind, posterIssuer, runTermRelay, workerIssuer } from "../src/index.js";
+import { clockAt, createTermSide, jobKind, jobTag, mockExtensionsHeader, negotiationKind, posterIssuer, runTermRelay, workerIssuer } from "../src/index.js";
 import type { TermJob, TermMandate } from "../src/index.js";
 import { createTestBoard } from "./board.js";
 
@@ -198,5 +198,31 @@ describe("term negotiation over the relay", () => {
     const result = await run(board);
     expect(result.poster.session?.phase).toBe("agreed");
     expect(result.worker.session?.phase).toBe("agreed");
+  });
+
+  it("does not negotiate on a job at or after its expiry, even mid-negotiation", async () => {
+    for (const workerNow of [job.expiresAt, "2026-11-10T00:00:00.001Z"]) {
+      const board = createTestBoard(clock);
+      const poster = createTermSide({ board, clock, jobId: job.jobId, config: { party: "client", mandate: clientMandate, human: "approve" }, postJob: job });
+      await poster.step();
+      const worker = createTermSide({ board, clock: clockAt(workerNow), jobId: job.jobId, config: { party: "worker", mandate: workerMandate, human: "approve" } });
+      await worker.step();
+      await worker.step();
+      expect(worker.report().refusals.some((reason) => reason.includes("the job has expired"))).toBe(true);
+      const listed = await board.query({ tags: [{ name: jobTag, values: [job.jobId] }] });
+      expect(listed.ok && listed.events.filter((event) => event.kind === negotiationKind).length).toBe(0);
+    }
+    let at = Date.parse(clock.now());
+    const ticking = { now: () => { at += 60000; return new Date(at).toISOString(); } };
+    const shortExpiry = new Date(Date.parse(clock.now()) + 600000).toISOString();
+    const result = await runTermRelay({
+      board: createTestBoard(clock),
+      clock: ticking,
+      job: { ...job, expiresAt: shortExpiry },
+      client: { party: "client", mandate: clientMandate, human: "approve" },
+      worker: { party: "worker", mandate: workerMandate, human: "approve" },
+    });
+    expect(result.events.every((event) => Date.parse(event.createdAt) < Date.parse(shortExpiry))).toBe(true);
+    expect(result.poster.session?.phase).not.toBe("agreed");
   });
 });

@@ -46,6 +46,7 @@ type Side = {
   readonly jobId: string;
   readonly postedJob: TermJob | undefined;
   readonly now: () => string;
+  jobExpiresAt: string | undefined;
   session: TermSession | undefined;
   readonly applied: Set<string>;
   readonly refusals: string[];
@@ -186,14 +187,19 @@ async function publish(input: {
   readonly kind: string;
   readonly expiresAt: string;
   readonly body: JsonObject;
+  readonly notAfter?: string;
 }): Promise<string | undefined> {
+  const createdAt = input.clock.now();
+  if (input.notAfter !== undefined && Date.parse(input.notAfter) <= Date.parse(createdAt)) {
+    return "the job has expired; nothing was published";
+  }
   for (let attempt = 0; attempt < maxIdAttempts; attempt += 1) {
     const result = await input.board.publish({
       id: nextId(await loadEvents(input.board, input.jobId)),
       issuer: input.issuer,
       kind: input.kind,
       tags: [[jobTag, input.jobId]],
-      createdAt: input.clock.now(),
+      createdAt,
       expiresAt: input.expiresAt,
       body: input.body,
       sig: unverifiedSig,
@@ -307,6 +313,7 @@ function acceptJob(side: Side, event: StoredEvent): void {
     return;
   }
   side.session = opened;
+  side.jobExpiresAt = job.expiresAt;
   if (side.party === "worker") {
     side.shownFreeText.push(redactFreeText(job.description));
   }
@@ -320,9 +327,18 @@ function finished(side: Side): boolean {
   return side.stopped || side.session?.phase === "agreed" || side.session?.phase === "no_deal";
 }
 
+function jobExpired(side: Side): boolean {
+  return side.jobExpiresAt !== undefined && Date.parse(side.jobExpiresAt) <= Date.parse(side.now());
+}
+
 async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): Promise<boolean> {
   await sync(side, board, jobId, clock);
   if (finished(side) || side.session === undefined) {
+    return false;
+  }
+  if (jobExpired(side)) {
+    side.refusals.push("the job has expired during the negotiation");
+    side.stopped = true;
     return false;
   }
   const turn = nextTurn(side.config, side.session, clock);
@@ -342,6 +358,7 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
     kind: negotiationKind,
     expiresAt: turn.message.expiresAt,
     body: { record: termRecord, extensionsHeader: mockExtensionsHeader, message: toJson(turn.message) },
+    ...(side.jobExpiresAt === undefined ? {} : { notAfter: side.jobExpiresAt }),
   });
   if (failure !== undefined) {
     side.refusals.push(failure);
@@ -359,6 +376,7 @@ function newSide(party: Party, config: TermAgentConfig, jobId: string, postedJob
     jobId,
     postedJob,
     now,
+    jobExpiresAt: undefined,
     session: undefined,
     applied: new Set<string>(),
     refusals: [],
@@ -423,6 +441,7 @@ export function createTermSide(input: {
           kind: jobKind,
           expiresAt: input.postJob.expiresAt,
           body: jobBody(input.postJob),
+          notAfter: input.postJob.expiresAt,
         });
         if (posted !== undefined) {
           side.refusals.push(posted);

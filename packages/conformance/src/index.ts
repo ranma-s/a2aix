@@ -132,8 +132,8 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
       return pass(
         item,
         "injected_clock",
-        "With an injected clock, neither mock negotiates on a job at or after its expiry, both negotiate before it, and a message published after its own expiry is refused. Signatures are not checked.",
-        "渡した時計で、依頼票の期限ちょうど、およびそのあとには交渉のメッセージを出さず、期限前には出します。期限切れのメッセージは受け付けません。署名は見ていません。",
+        "With injected clocks kept separate for the relay and the agents, neither mock negotiates on a job at or after its expiry, a negotiation that reaches the expiry stops and publishes nothing after it, both negotiate before it, and a message published after its own expiry is refused. Signatures are not checked.",
+        "中継と模試に別々の時計を渡して確かめました。依頼票の期限ちょうど、およびそのあとには交渉のメッセージを出さず、交渉の途中で期限になればそこで止まり、期限のあとには何も出しません。期限前には交渉します。期限切れのメッセージは受け付けません。署名は見ていません。",
       );
     case "ignores-instructions-in-free-text":
       return pass(
