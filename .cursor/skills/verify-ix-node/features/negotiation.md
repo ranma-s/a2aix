@@ -1,30 +1,28 @@
 # Negotiation
 
-交渉。Proposal、CounterProposal、AgreementDraft。段階機械は `@ix/a2a-ext-negotiation`。模試の発注側と受注側が、`127.0.0.1` の中継の掲載と検索でこの機械を進める。署名は見ない。
+交渉。項目を1つずつ確定させる交渉（T18〜T22）。項目の状態の機械は `@ix/a2a-ext-negotiation` の `openTermSession` と `applyTermMessage`。模試の発注側と受注側が、`127.0.0.1` の中継でこの機械を進める。署名は見ない。旧来の交渉（Proposal、CounterProposal、自由文の AgreementDraft、`apply`）は T22 で消した。
 
 ## Sub-features
 
-- A mock worker publishes a Proposal on the injected relay. The client mock reads it back with query. This is not an A2A HTTP endpoint.
-- Either agent sends a CounterProposal: `counter`, `accept`, or `decline`.
-- The client agent builds an AgreementDraft. The worker agent recomputes it in the spec. This revision stores the draft it is given and does not recompute a hash.
-- Phase lives in metadata, not in a new Task state.
-- `apply` in `@ix/a2a-ext-negotiation` is the phase machine. It does not sign, hash, or check a mandate. Signature material stays `deferred`.
+- The poster publishes a term job (`JobPosting/1`, body record `term-job`) naming a term sheet and preset values. Both mocks publish term messages (`x-mock/negotiation-message`, body record `term`) on the injected relay. This is not an A2A HTTP endpoint.
+- Term messages: `TermPropose`, `TermCounter`, `TermAccept`, `TermAdd`, `TermDrop`, `TermReopen`, `TermRefuse`, `DealDecline`, `TermAgreementDraft`, `TermApproval`.
+- Each side rebuilds its own session only from relay events, decoding each with `decodeTermMessage` and refusing malformed records, mismatched issuers, and messages before the job.
+- The agreement draft is the sorted list of fixed terms and must equal the rebuild from history before the humans decide.
+- The machine does not sign, hash, or check a mandate. `valueHash`, `prevHash`, and `transcriptHash` are placeholders.
 
 ## How to get to it (user POV)
 
-After a job post is found, the worker's agent contacts the client agent directly. The relay is no longer in the path. The human sees an agreement draft only when the phase is `awaiting_approval`. There is no screen for this yet.
+There is no screen. The human sees the agreement draft only in `awaiting_approval`, and free text only after contact redaction.
 
 ## Driving it with verify-ix-node
 
-Drive starts the localhost relay and both mocks. Both must print `agreed`. The mocks negotiate term by term (T18-T20): the poster posts a term job and both publish term messages through the relay, each rebuilding its own state from relay events. That path is `negotiation-mock` in the evidence. It is not an A2A HTTP endpoint, and it does not verify a signature. `@ix/verify` `verifyTermTranscript` then replays the relay events independently without hashing them. The conformance suite also runs on the term negotiation (T21). The legacy free-text negotiation code remains until stage 3 removes it.
+Drive starts the localhost relay and runs the poster and worker as separate processes. Both must print `agreed`. That path is `negotiation-mock` in the evidence. `@ix/verify` `verifyTermTranscript` then replays the relay events independently without hashing them. The conformance suite runs on the same negotiation.
 
 ## Gotchas
 
-- Phase values are `negotiating`, `awaiting_approval`, `agreed`, and `no_deal`. The metadata key is `https://w3id.org/a2a-job/ext/negotiation/v1/phase`. Do not add a Task state enum value.
-- `no_deal` uses `TASK_STATE_REJECTED` when the client agent refuses, and `TASK_STATE_CANCELED` when the worker withdraws, the deadline passes, or the round limit is hit. The reason is metadata, not a new state.
-- The opening proposal is round 1. A client counter stays in the current round. A worker counter opens the next round unless `roundOpen` is set, which means a human return already opened it. The worker counter that would open `maxRoundTrips + 1` is `no_deal` / `round_limit` / `TASK_STATE_CANCELED`. Human `reject` or `revise` when `round < maxRoundTrips` returns to `negotiating` and consumes the next round. At the cap it is `no_deal` / `round_limit`.
-- The clock is an argument. `now >= expiresAt` is `no_deal` / `expired` / `TASK_STATE_CANCELED`, and it wins over a round-limit counter.
-- `agreed` happens only on the second human `approve`. One approval stays in `awaiting_approval`. An agent `accept` plus `AgreementDraft` is not agreement.
-- `contextId` is the `jobId`.
+- Session phases are `negotiating`, `awaiting_approval`, `agreed`, and `no_deal`. Term statuses are `open`, `proposed`, `fixed`, `dropped`, and the request states `add_requested`, `drop_requested`, `reopen_requested`.
+- A term is fixed only when the other side accepts an equal value. Rounds are counted per term.
+- `agreed` happens only on the second human `approve`.
+- A job at or after its expiry is not negotiated, and a negotiation that reaches the job's expiry stops. The session phase is not changed to `no_deal` when it stops; the refusal records why.
 - A free-text `note` is not an instruction to the other agent.
 - Negotiation requires the mandate, approval, and transcript extensions. Do not implement it without those URIs.

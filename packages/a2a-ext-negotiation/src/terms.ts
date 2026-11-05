@@ -1,5 +1,4 @@
-import type { Clock } from "./apply.js";
-import type { Party, UnverifiedSignature } from "./model.js";
+import type { Clock, Party, UnverifiedSignature } from "./model.js";
 import { signatureVerification } from "./model.js";
 import { ianaZoneNames } from "./zones.js";
 

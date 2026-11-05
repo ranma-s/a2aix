@@ -8,7 +8,7 @@
 
 The normative protocol text for implementation is the section **交渉の拡張仕様（案 v0.3）**. Business numbers in the first part are hypotheses, not requirements.
 
-How those phases move, in plain language, is [`../negotiation-states.md`](../negotiation-states.md). That page describes the phase machine. It does not change the spec.
+The negotiation itself is now the term-by-term draft, [`term-protocol-draft.md`](term-protocol-draft.md). How it moves, in plain language, is [`../negotiation-states.md`](../negotiation-states.md).
 
 ## License
 
@@ -26,7 +26,7 @@ Code in the rest of the repository is **Apache-2.0**. See `/LICENSE` and `/NOTIC
 
 実装が従う本文は **交渉の拡張仕様（案 v0.3）** です。前半の事業の数字は仮説であり、要件ではありません。
 
-段階の進み方を、エンジニア以外向けに書いたものが [`../negotiation-states.md`](../negotiation-states.md) です。仕様そのものは変えていません。
+交渉そのものは、項目を1つずつ確定させる案 [`term-protocol-draft.md`](term-protocol-draft.md) に置き換えました。進み方をエンジニア以外向けに書いたものが [`../negotiation-states.md`](../negotiation-states.md) です。
 
 ## ライセンス
 

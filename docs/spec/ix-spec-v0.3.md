@@ -521,6 +521,8 @@ no\_deal の状態の使い分け: Taskを持つ発注側のAgentが断ったと
 
 ## メッセージの型
 
+> この節と「流れとTaskの状態」の交渉の段階は、[`term-protocol-draft.md`](term-protocol-draft.md)（項目を1つずつ確定させる交渉）に置き換えた（T22）。実装は置き換え後の案に従う。ここの表は経緯として残す。
+
 どのメッセージも `mediaType: "application/json"` のdataパート1つで送り、`data.type` で種類を示す。金額は `{"amount": 整数, "currency": "JPY", "taxIncluded": 真偽}`、日付はISO 8601。
 
 交渉のメッセージには、送信者の署名 `signature` と、1つ前のメッセージのハッシュ `prevHash` を付ける。これで双方が同じ履歴を持ち、片方が後から書き換えても検知できる。
