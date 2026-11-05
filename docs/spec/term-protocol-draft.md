@@ -283,7 +283,7 @@
 
 `x-studio:photo-shoot` のように交渉の中で足された項目が、多くの合意で使われれば、次の版の `ix:sheet/web-site` に入る候補になる。
 
-## 13. 実装の状態（T18・T19）
+## 13. 実装の状態（T18・T19・T20）
 
 - `@ix/a2a-ext-negotiation` の `openTermSession` と `applyTermMessage` が、項目ごとの状態と交渉全体の段階を進める。純粋な関数で、時計は外から渡す。
 - 共通の核 `ix:core/1`（`coreSheet`）と、Web サイト制作の項目表 `ix:sheet/web-site/1`（`webSiteSheet`）を持つ。`ix:initial-spec` は共通の核の任意の項目にした。
