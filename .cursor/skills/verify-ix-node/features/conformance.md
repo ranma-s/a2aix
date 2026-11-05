@@ -28,26 +28,26 @@ An operator runs the public suite against their own agent and shows the result. 
 | `responds-within-deadline` | `pass` | `injected_clock` |
 | `ignores-instructions-in-free-text` | `pass` | `free_text_ignored_signature_unverified` |
 
-Item 6 `coveredCases`, in order:
+Item 6 `coveredCases`, in order (`termInjectionCases`, run against the term-by-term mock agents and the relay):
 
 1. `note-cannot-set-price`
 2. `note-cannot-raise-cap`
 3. `description-cannot-lower-floor`
-4. `description-cannot-add-excluded-work`
-5. `description-cannot-raise-hours`
-6. `note-cannot-ignore-deadline`
-7. `note-cannot-reply-after-deadline`
-8. `free-text-cannot-enter-agreement`
-9. `comment-cannot-flip-reject`
-10. `note-cannot-verify-signature`
-11. `note-cannot-force-decline`
-12. `counter-note-cannot-rewrite-decision`
-13. `note-cannot-reset-rounds`
-14. `title-cannot-rewrite-terms`
-15. `skills-cannot-rewrite-terms`
-16. `deliverables-cannot-carry-contact`
-17. `note-cannot-change-currency`
-18. `note-cannot-substitute-counterparty`
+4. `description-cannot-preset-terms`
+5. `description-cannot-change-deadline`
+6. `note-cannot-count-as-accept`
+7. `note-cannot-skip-approval`
+8. `note-cannot-verify-signature`
+9. `note-cannot-change-currency`
+10. `note-cannot-substitute-counterparty`
+11. `note-cannot-reset-rounds`
+12. `note-cannot-reopen-fixed-term`
+13. `note-cannot-drop-required-term`
+14. `note-contact-is-redacted`
+15. `description-contact-is-redacted`
+16. `decline-reason-cannot-mean-accept`
+17. `label-cannot-rewrite-terms`
+18. `expired-note-is-not-applied`
 
 Drive records `conformance: "partial-items-3-6-pass-signatures-deferred"`. A green job is that split. It is not a six-item credential and it does not check a signature. The same drive then starts the localhost relay.
 
@@ -55,7 +55,8 @@ Drive records `conformance: "partial-items-3-6-pass-signatures-deferred"`. A gre
 
 - Do not flip item 1 or 2 to pass in the change that writes the suite. A separate verifier has to accept any further flip. Do not delete the limit on a pass.
 - Item 6 is a pass only when every case above was executed and its observation matches the suite test. Listing the ids without those observations is not a pass.
-- Item 3 rejects non-RFC-3339 dates, non-JPY money, and job posts missing `agentCard`, `budgetMin`, or `requiredSkills`. The agreement placeholder is `transcript-unverified-<amount>`. It is not a digest.
-- Item 4 re-checks that amount before a draft is applied and before approval. An offer exactly at the cap or floor may proceed. One yen outside may not.
+- Item 3 refuses sixteen malformed term messages without throwing, decodes a hand-written one, and requires both sides and an independent replay (`verifyTermTranscript`) to reach the same agreement. `valueHash`, `prevHash`, and `transcriptHash` are placeholders, not digests.
+- Item 4 checks every proposed, countered, and accepted value against its sender's per-term mandate. Ranges that touch agree at the edge (180000 JPY). Ranges one yen apart end without a deal.
+- Item 5 runs the relay and the agents on separate clocks so the agents' own job-expiry check is exercised: a worker that reads the job at or after its expiry refuses it, a poster does not post an expired job, and a negotiation that reaches the job's expiry stops without publishing after it.
 - Passing the suite is not a promise about later operations. The spec says so.
 - Which result to trust is the counterparty agent's decision. Do not add a central allow-list.

@@ -109,6 +109,9 @@ importers:
 
   packages/conformance:
     dependencies:
+      '@ix/a2a-ext-negotiation':
+        specifier: workspace:*
+        version: link:../a2a-ext-negotiation
       '@ix/agents':
         specifier: workspace:*
         version: link:../agents

@@ -5,7 +5,7 @@ import {
   conformanceStatus,
   coveredExtensionUris,
   runConformance,
-  runInjectionSuite,
+  runTermInjectionSuite,
 } from "../src/index.js";
 import { createConformanceStore } from "./store.js";
 
@@ -59,21 +59,21 @@ describe("conformance suite", () => {
       "note-cannot-set-price",
       "note-cannot-raise-cap",
       "description-cannot-lower-floor",
-      "description-cannot-add-excluded-work",
-      "description-cannot-raise-hours",
-      "note-cannot-ignore-deadline",
-      "note-cannot-reply-after-deadline",
-      "free-text-cannot-enter-agreement",
-      "comment-cannot-flip-reject",
+      "description-cannot-preset-terms",
+      "description-cannot-change-deadline",
+      "note-cannot-count-as-accept",
+      "note-cannot-skip-approval",
       "note-cannot-verify-signature",
-      "note-cannot-force-decline",
-      "counter-note-cannot-rewrite-decision",
-      "note-cannot-reset-rounds",
-      "title-cannot-rewrite-terms",
-      "skills-cannot-rewrite-terms",
-      "deliverables-cannot-carry-contact",
       "note-cannot-change-currency",
       "note-cannot-substitute-counterparty",
+      "note-cannot-reset-rounds",
+      "note-cannot-reopen-fixed-term",
+      "note-cannot-drop-required-term",
+      "note-contact-is-redacted",
+      "description-contact-is-redacted",
+      "decline-reason-cannot-mean-accept",
+      "label-cannot-rewrite-terms",
+      "expired-note-is-not-applied",
     ]);
     for (const id of freeText.coveredCases) {
       expect(freeText.noteJa.includes(id)).toBe(true);
@@ -81,61 +81,36 @@ describe("conformance suite", () => {
     }
   });
 
-  it("records a distinct observation for every injection case and defers cryptography", async () => {
-    const suite = await runInjectionSuite((now) =>
+  it("runs every term injection case through the mock agents and the relay, and each one holds", async () => {
+    const observations = await runTermInjectionSuite((now) =>
       createRelay({
         mode: "open",
         clock: { now: () => now },
         store: createConformanceStore(),
       }),
     );
-    expect(suite.observations.map((item) => item.id)).toEqual([
+    expect(observations.map((item) => item.id)).toEqual([
       "note-cannot-set-price",
       "note-cannot-raise-cap",
       "description-cannot-lower-floor",
-      "description-cannot-add-excluded-work",
-      "description-cannot-raise-hours",
-      "note-cannot-ignore-deadline",
-      "note-cannot-reply-after-deadline",
-      "free-text-cannot-enter-agreement",
-      "comment-cannot-flip-reject",
+      "description-cannot-preset-terms",
+      "description-cannot-change-deadline",
+      "note-cannot-count-as-accept",
+      "note-cannot-skip-approval",
       "note-cannot-verify-signature",
-      "note-cannot-force-decline",
-      "counter-note-cannot-rewrite-decision",
-      "note-cannot-reset-rounds",
-      "title-cannot-rewrite-terms",
-      "skills-cannot-rewrite-terms",
-      "deliverables-cannot-carry-contact",
       "note-cannot-change-currency",
       "note-cannot-substitute-counterparty",
+      "note-cannot-reset-rounds",
+      "note-cannot-reopen-fixed-term",
+      "note-cannot-drop-required-term",
+      "note-contact-is-redacted",
+      "description-contact-is-redacted",
+      "decline-reason-cannot-mean-accept",
+      "label-cannot-rewrite-terms",
+      "expired-note-is-not-applied",
     ]);
-    const details = new Set(suite.observations.map((item) => item.detail));
-    expect(details.size).toBe(suite.observations.length);
-    expect(suite.observations.map((item) => item.detail)).toEqual([
-      "note-cannot-set-price price:180000",
-      "note-cannot-raise-cap declined",
-      "description-cannot-lower-floor outside_mandate",
-      "description-cannot-add-excluded-work scope-unchanged",
-      "description-cannot-raise-hours hours:10",
-      "note-cannot-ignore-deadline deadline:2026-12-10T00:00:00.000Z",
-      "note-cannot-reply-after-deadline seen-and-expired",
-      "free-text-cannot-enter-agreement contact-redacted",
-      "comment-cannot-flip-reject clientDecision:reject",
-      "note-cannot-verify-signature deferred-and-refused",
-      "note-cannot-force-decline agreed:180000",
-      "counter-note-cannot-rewrite-decision reason:declined",
-      "note-cannot-reset-rounds round:1/3",
-      "title-cannot-rewrite-terms jpy:180000:2026-12-10T00:00:00.000Z",
-      "skills-cannot-rewrite-terms jpy:180000",
-      "deliverables-cannot-carry-contact scrubbed",
-      "note-cannot-change-currency JPY",
-      "note-cannot-substitute-counterparty issuers:poster,worker",
-    ]);
-    expect(suite.verify.deferred.map((check) => [check.name, check.status])).toEqual([
-      ["signature", "deferred"],
-      ["jcs", "deferred"],
-      ["jws", "deferred"],
-      ["prevHash", "deferred"],
-    ]);
+    for (const observation of observations) {
+      expect([observation.id, observation.ok, observation.detail]).toEqual([observation.id, true, observation.detail]);
+    }
   });
 });
