@@ -115,9 +115,6 @@ importers:
       '@ix/agents':
         specifier: workspace:*
         version: link:../agents
-      '@ix/approval-app':
-        specifier: workspace:*
-        version: link:../approval-app
       '@ix/distribution':
         specifier: workspace:*
         version: link:../distribution

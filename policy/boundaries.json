@@ -90,7 +90,6 @@
       "dependsOn": [
         "@ix/a2a-ext-negotiation",
         "@ix/agents",
-        "@ix/approval-app",
         "@ix/distribution",
         "@ix/node",
         "@ix/protocol-core",

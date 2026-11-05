@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildTermAgreement, openTermSession, applyTermMessage, coreSheet, signatureVerification, valueHashVerification } from "@ix/a2a-ext-negotiation";
 import type { Party, TermJson, TermMessage } from "@ix/a2a-ext-negotiation";
 import type { JsonValue } from "@ix/distribution";
-import { verifyTermTranscript } from "../src/index.js";
+import { checkJcs, checkJws, checkPrevHash, checkSignature, verifyTermTranscript } from "../src/index.js";
 
 const issuers = { client: "did:example:poster", worker: "did:example:worker" };
 const at = "2026-11-03T00:00:00.000Z";
@@ -105,5 +105,18 @@ describe("independent term transcript verification", () => {
     });
     expect(verifyTermTranscript({ jobId: "j", events: altered, issuers, ...deferredInput }).replay).toBe("fail");
     expect(verifyTermTranscript({ jobId: "j", events: transcript().slice(1), issuers, ...deferredInput }).replay).toBe("fail");
+  });
+
+  it("keeps the four cryptographic checks deferred", () => {
+    const report = verifyTermTranscript({ jobId: "j", events: transcript(), issuers, ...deferredInput });
+    expect(report.deferred.map((check) => check.status)).toEqual(["deferred", "deferred", "deferred", "deferred"]);
+    for (const check of [checkSignature("x"), checkJcs({ a: 1 }), checkJws("x"), checkPrevHash("x")]) {
+      expect(check.status).toBe("deferred");
+    }
+  });
+
+  it("fails deadlines when a message is published at or after its own expiry", () => {
+    const late = transcript().map((event, index) => (index === 1 && isRecord(event) ? { ...event, createdAt: "2026-11-04T00:00:00.000Z" } : event));
+    expect(verifyTermTranscript({ jobId: "j", events: late, issuers, ...deferredInput }).deadlines).toBe("fail");
   });
 });

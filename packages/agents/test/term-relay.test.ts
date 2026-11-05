@@ -225,4 +225,38 @@ describe("term negotiation over the relay", () => {
     expect(result.events.every((event) => Date.parse(event.createdAt) < Date.parse(shortExpiry))).toBe(true);
     expect(result.poster.session?.phase).not.toBe("agreed");
   });
+
+  it("refuses a negotiation record whose extensions header does not activate negotiation", async () => {
+    const board = createTestBoard(clock);
+    for (const [id, header] of [["u-0001", "https://w3id.org/a2a-job/ext/negotiation/v1"], ["u-0002", ""]] as const) {
+      await board.publish({
+        id,
+        issuer: workerIssuer,
+        kind: negotiationKind,
+        tags: [[jobTag, job.jobId]],
+        createdAt: clock.now(),
+        expiresAt: "2026-11-04T00:00:00.000Z",
+        body: {
+          record: "term",
+          extensionsHeader: header,
+          message: {
+            from: "worker",
+            sentAt: clock.now(),
+            expiresAt: "2026-11-04T00:00:00.000Z",
+            prevHash: "unverified",
+            signature: { verification: signatureVerification, material: "x" },
+            type: "TermPropose",
+            termId: "ix:price",
+            value: { amount: 1, currency: "JPY", taxIncluded: true },
+          },
+        },
+        sig: "x",
+      });
+    }
+    const result = await run(board);
+    expect(result.poster.refusals.filter((reason) => reason.includes("not a term negotiation record")).length).toBe(2);
+    expect(result.poster.session?.phase).toBe("agreed");
+    const price = result.poster.session?.draft?.terms.find((term) => term.termId === "ix:price")?.value;
+    expect(price).not.toEqual({ amount: 1, currency: "JPY", taxIncluded: true });
+  });
 });

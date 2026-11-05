@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  requiredExtensionUris,
+  status,
+  uri,
   decodeTermMessage,
   checkTermDefinition,
   deadlineIn,
@@ -512,5 +515,15 @@ describe("term-by-term negotiation", () => {
       expect(decodeTermMessage(raw).ok).toBe(false);
     }
     expect(decodeTermMessage({ ...base, value: 1 }).ok).toBe(true);
+  });
+
+  it("names the negotiation URI, its status, and the three extensions it requires", () => {
+    expect(uri).toBe("https://w3id.org/a2a-job/ext/negotiation/v1");
+    expect(status).toBe("term_machine");
+    expect(requiredExtensionUris).toEqual([
+      "https://w3id.org/a2a-job/ext/mandate/v1",
+      "https://w3id.org/a2a-job/ext/approval/v1",
+      "https://w3id.org/a2a-job/ext/transcript/v1",
+    ]);
   });
 });
