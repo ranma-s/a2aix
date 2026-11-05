@@ -16,7 +16,7 @@ After a job post is found, the worker's agent contacts the client agent directly
 
 ## Driving it with verify-ix-node
 
-Drive starts the localhost relay and both mocks. Both must print `agreed`. That path is `negotiation-mock` in the evidence. It is not an A2A HTTP endpoint, and it does not verify a signature. `@ix/verify` then replays the same messages through the phase machine without hashing them.
+Drive starts the localhost relay and both mocks. Both must print `agreed`. The mocks negotiate term by term (T18-T20): the poster posts a term job and both publish term messages through the relay, each rebuilding its own state from relay events. That path is `negotiation-mock` in the evidence. It is not an A2A HTTP endpoint, and it does not verify a signature. `@ix/verify` `verifyTermTranscript` then replays the relay events independently without hashing them. The legacy free-text negotiation is still used by the conformance suite until stage 2b.
 
 ## Gotchas
 

@@ -12,11 +12,11 @@
 
 ## How to get to it (user POV)
 
-There is no screen. Drive prints one JSON object from the localhost trial. `schema`, `replay`, `bounds`, and `deadlines` are `pass` or `fail`. `deferred` names the four checks that were not done.
+There is no screen. Drive prints one JSON object from the localhost trial. `negotiation` is `term-by-term`. `schema`, `issuers`, `replay`, `bounds`, and `deadlines` are `pass` or `fail`. `bounds` checks every agreed term against both sample mandates. `deferred` names the four checks that were not done.
 
 ## Driving it with verify-ix-node
 
-`node scripts/verify-ix-node.mjs drive` runs `scripts/ix-trial-evidence.mjs` after the check suite. That script binds `127.0.0.1`, runs the mock exchange, and calls `verifyTranscript`. Evidence lists `ix-verify` in `protocolFeaturesDriven` only when the drive exits 0.
+`node scripts/verify-ix-node.mjs drive` runs `scripts/ix-trial-evidence.mjs` after the check suite. That script binds `127.0.0.1`, runs the poster and worker as separate processes, and calls `verifyTermTranscript` on the relay events. Evidence lists `ix-verify` in `protocolFeaturesDriven` only when the drive exits 0.
 
 `pnpm conformance` also calls `verifyTranscript` on one injection-resistant exchange. A pass there is the same non-cryptographic check.
 

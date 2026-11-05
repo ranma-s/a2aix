@@ -17,6 +17,9 @@ export type { SchemaResult, VerifyMessage } from "./schema.js";
 export { replayTranscript } from "./replay.js";
 export type { ReplayResult, ReplayStep } from "./replay.js";
 
+export { verifyTermTranscript } from "./terms.js";
+export type { TermVerifyReport } from "./terms.js";
+
 export const verifyStatus = "non_cryptographic" as const;
 
 export type VerifyReport = {

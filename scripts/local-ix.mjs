@@ -4,13 +4,12 @@ import { createServer } from "node:http";
 import { createLocalRelay } from "@ix/adapters";
 import {
   clockAt,
-  createPoster,
-  createWorker,
-  runPosterWorker,
-  sampleJob,
+  createTermSide,
+  runTermRelay,
   sampleNow,
-  samplePosterBound,
-  sampleWorkerBound,
+  sampleTermClientMandate,
+  sampleTermJob,
+  sampleTermWorkerMandate,
 } from "@ix/agents";
 
 const loopback = "127.0.0.1";
@@ -246,56 +245,57 @@ async function runRole(role) {
   const clock = clockAt(readNow());
   const side =
     role === "poster"
-      ? createPoster({
+      ? createTermSide({
           board,
           clock,
-          job: sampleJob,
-          bound: samplePosterBound,
-          human: "approve",
+          jobId: sampleTermJob.jobId,
+          config: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
+          postJob: sampleTermJob,
         })
-      : createWorker({
+      : createTermSide({
           board,
           clock,
-          job: sampleJob,
-          bound: sampleWorkerBound,
-          human: "approve",
+          jobId: sampleTermJob.jobId,
+          config: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
         });
-  for (let index = 0; index < 40; index += 1) {
+  for (let index = 0; index < 400; index += 1) {
     await side.step();
-    const phase = side.session().phase;
-    if (phase === "agreed" || phase === "no_deal") {
-      console.log(`${role}: ${phase}`);
+    const phase = side.report().session?.phase;
+    if (phase === "agreed" || phase === "no_deal" || side.finished()) {
+      console.log(`${role}: ${phase ?? "stopped"}`);
       if (phase !== "agreed") {
+        console.error(JSON.stringify(side.report().refusals));
         process.exit(1);
       }
       return;
     }
-    await delay(50);
+    await delay(20);
   }
-  console.error(`${role}: stopped in ${side.session().phase}`);
+  console.error(`${role}: stopped in ${side.report().session?.phase ?? "no session"}`);
   process.exit(1);
 }
 
 async function exchange() {
   const now = readNow();
   const relay = createLocalRelay({ mode: readMode(), clock: clockAt(now) });
-  const report = await runPosterWorker({
+  const report = await runTermRelay({
     board: relay,
     clock: clockAt(now),
-    job: sampleJob,
-    posterBound: samplePosterBound,
-    workerBound: sampleWorkerBound,
-    humans: { client: "approve", worker: "approve" },
+    job: sampleTermJob,
+    client: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
+    worker: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
   });
-  console.log(`poster: ${report.poster.phase}`);
-  console.log(`worker: ${report.worker.phase}`);
+  const posterPhase = report.poster.session?.phase ?? "none";
+  const workerPhase = report.worker.session?.phase ?? "none";
+  console.log(`poster: ${posterPhase}`);
+  console.log(`worker: ${workerPhase}`);
   for (const event of report.events) {
     if (event.signatureVerification !== "deferred") {
       console.error("signature verification must stay deferred");
       process.exit(1);
     }
   }
-  if (report.poster.phase !== "agreed" || report.worker.phase !== "agreed") {
+  if (posterPhase !== "agreed" || workerPhase !== "agreed") {
     process.exit(1);
   }
 }

@@ -371,6 +371,67 @@ function report(side: Side): TermSideReport {
   };
 }
 
+export type TermSideHandle = {
+  readonly party: Party;
+  readonly step: () => Promise<boolean>;
+  readonly sync: () => Promise<void>;
+  readonly finished: () => boolean;
+  readonly report: () => TermSideReport;
+};
+
+export function createTermSide(input: {
+  readonly board: JobBoard;
+  readonly clock: Clock;
+  readonly jobId: string;
+  readonly config: TermAgentConfig;
+  readonly postJob?: TermJob;
+}): TermSideHandle {
+  const problem = checkTermMandate(input.config.mandate);
+  if (problem !== undefined) {
+    throw new Error(`${input.config.party} mandate is not usable: ${problem}`);
+  }
+  if (input.postJob !== undefined) {
+    if (input.config.party !== "client" || input.postJob.jobId !== input.jobId) {
+      throw new Error("only the client side posts the job, under its own job id");
+    }
+    for (const entry of input.postJob.preset) {
+      const limit = input.config.mandate[entry.termId];
+      if (limit !== undefined && !withinLimit(limit, entry.value)) {
+        throw new Error(`client preset ${entry.termId} is outside the client's own mandate`);
+      }
+    }
+  }
+  const side = newSide(input.config.party, input.config, input.jobId, input.postJob);
+  let needsPost = input.postJob !== undefined;
+  return {
+    party: side.party,
+    async step() {
+      if (needsPost && input.postJob !== undefined) {
+        needsPost = false;
+        const posted = await publish({
+          board: input.board,
+          clock: input.clock,
+          issuer: posterIssuer,
+          jobId: input.jobId,
+          kind: jobKind,
+          expiresAt: input.postJob.expiresAt,
+          body: jobBody(input.postJob),
+        });
+        if (posted !== undefined) {
+          side.refusals.push(posted);
+          side.stopped = true;
+          return false;
+        }
+        return true;
+      }
+      return step(side, input.board, input.jobId, input.clock);
+    },
+    sync: () => sync(side, input.board, input.jobId, input.clock),
+    finished: () => finished(side),
+    report: () => report(side),
+  };
+}
+
 export async function runTermRelay(input: {
   readonly board: JobBoard;
   readonly clock: Clock;
@@ -378,43 +439,18 @@ export async function runTermRelay(input: {
   readonly client: TermAgentConfig;
   readonly worker: TermAgentConfig;
 }): Promise<TermRelayReport> {
-  for (const config of [input.client, input.worker]) {
-    const problem = checkTermMandate(config.mandate);
-    if (problem !== undefined) {
-      throw new Error(`${config.party} mandate is not usable: ${problem}`);
-    }
-  }
-  for (const entry of input.job.preset) {
-    const limit = input.client.mandate[entry.termId];
-    if (limit !== undefined && !withinLimit(limit, entry.value)) {
-      throw new Error(`client preset ${entry.termId} is outside the client's own mandate`);
-    }
-  }
-  const poster = newSide("client", input.client, input.job.jobId, input.job);
-  const worker = newSide("worker", input.worker, input.job.jobId, undefined);
-  const posted = await publish({
-    board: input.board,
-    clock: input.clock,
-    issuer: posterIssuer,
-    jobId: input.job.jobId,
-    kind: jobKind,
-    expiresAt: input.job.expiresAt,
-    body: jobBody(input.job),
-  });
-  if (posted !== undefined) {
-    poster.refusals.push(posted);
-    poster.stopped = true;
-  }
+  const poster = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.client, postJob: input.job });
+  const worker = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.worker });
   let quiet = 0;
   for (let index = 0; index < maxRelaySteps && quiet < 2; index += 1) {
-    const posterMoved = await step(poster, input.board, input.job.jobId, input.clock);
-    const workerMoved = await step(worker, input.board, input.job.jobId, input.clock);
+    const posterMoved = await poster.step();
+    const workerMoved = await worker.step();
     quiet = posterMoved || workerMoved ? 0 : quiet + 1;
-    if (finished(poster) && finished(worker)) {
+    if (poster.finished() && worker.finished()) {
       break;
     }
   }
-  await sync(poster, input.board, input.job.jobId, input.clock);
-  await sync(worker, input.board, input.job.jobId, input.clock);
-  return { poster: report(poster), worker: report(worker), events: await loadEvents(input.board, input.job.jobId) };
+  await poster.sync();
+  await worker.sync();
+  return { poster: poster.report(), worker: worker.report(), events: await loadEvents(input.board, input.job.jobId) };
 }

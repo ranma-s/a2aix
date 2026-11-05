@@ -1,8 +1,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 import { spawn } from "node:child_process";
-import { jobTag, sampleJob, sampleNow, samplePosterBound, sampleWorkerBound } from "@ix/agents";
-import { verifyTranscript } from "@ix/verify";
+import {
+  jobTag,
+  posterIssuer,
+  sampleTermClientMandate,
+  sampleTermJob,
+  sampleTermWorkerMandate,
+  withinLimit,
+  workerIssuer,
+} from "@ix/agents";
+import { verifyTermTranscript } from "@ix/verify";
 
 const loopback = "127.0.0.1";
 const trialMs = 20000;
@@ -153,7 +161,7 @@ try {
     await fetch(`${base}/query`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tags: [{ name: jobTag, values: [sampleJob.jobId] }] }),
+      body: JSON.stringify({ tags: [{ name: jobTag, values: [sampleTermJob.jobId] }] }),
     }),
   );
   if (queried["ok"] !== true || !Array.isArray(queried["events"])) {
@@ -171,46 +179,30 @@ try {
     }
     return 0;
   });
-  const messages = [];
   for (const event of events) {
     if (!isRecord(event) || event["signatureVerification"] !== "deferred" || !isRecord(event["body"])) {
       throw new Error("event was not a deferred record");
     }
-    if (event["body"]["record"] !== "negotiation") {
-      continue;
-    }
-    const message = event["body"]["message"];
-    if (message === undefined) {
-      throw new Error("negotiation event has no message");
-    }
-    messages.push(message);
   }
-  const first = messages[0];
-  const report = verifyTranscript({
-    jobId: sampleJob.jobId,
-    maxRoundTrips: sampleJob.maxRoundTrips,
-    expiresAt: sampleJob.expiresAt,
-    now: sampleNow,
-    messages,
-    bounds: {
-      posterMax: samplePosterBound.maxAmount,
-      workerMin: sampleWorkerBound.minAmount,
-      workerMaxHoursPerWeek: sampleWorkerBound.maxHoursPerWeek,
-      excludedWork: sampleWorkerBound.excludedWork,
-    },
+  const report = verifyTermTranscript({
+    jobId: sampleTermJob.jobId,
+    events,
+    issuers: { client: posterIssuer, worker: workerIssuer },
     signature: "unverified-placeholder",
     jws: "unverified-placeholder",
-    prevHash: "m-0001",
-    jcsBody: first ?? null,
+    prevHash: "unverified",
+    jcsBody: events[0] ?? null,
   });
-  if (
-    report.schema !== "pass" ||
-    report.replay !== "pass" ||
-    report.bounds !== "pass" ||
-    report.deadlines !== "pass" ||
-    report.phase !== "agreed"
-  ) {
+  if (report.schema !== "pass" || report.issuers !== "pass" || report.replay !== "pass" || report.deadlines !== "pass" || report.phase !== "agreed") {
     throw new Error(`ix-verify failed: ${report.detail}`);
+  }
+  for (const term of report.terms) {
+    for (const mandate of [sampleTermClientMandate, sampleTermWorkerMandate]) {
+      const limit = mandate[term.termId];
+      if (limit !== undefined && !withinLimit(limit, term.value)) {
+        throw new Error(`agreed ${term.termId} is outside a mandate`);
+      }
+    }
   }
   for (const check of report.deferred) {
     if (check.status !== "deferred") {
@@ -223,11 +215,14 @@ try {
       port,
       poster: "agreed",
       worker: "agreed",
+      negotiation: "term-by-term",
       schema: report.schema,
+      issuers: report.issuers,
       replay: report.replay,
-      bounds: report.bounds,
+      bounds: "pass",
       deadlines: report.deadlines,
       phase: report.phase,
+      messages: report.messageCount,
       deferred: report.deferred.map((check) => check.name),
     }),
   );
