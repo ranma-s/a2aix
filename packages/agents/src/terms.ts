@@ -251,7 +251,7 @@ function concession(limit: TermLimit, offered: TermJson | undefined): TermJson |
   }
 }
 
-type Turn = {
+export type Turn = {
   readonly message?: TermMessage;
   readonly escalation?: TermTrialEscalation;
 };
@@ -304,7 +304,7 @@ function decideTerm(config: TermAgentConfig, term: TermState, clock: Clock): Tur
   }
 }
 
-function nextTurn(config: TermAgentConfig, session: TermSession, clock: Clock): Turn | undefined {
+export function nextTurn(config: TermAgentConfig, session: TermSession, clock: Clock): Turn | undefined {
   const base = envelope(config.party, clock);
   if (session.phase === "awaiting_approval") {
     if (session.approvals.includes(config.party)) {

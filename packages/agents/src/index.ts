@@ -43,3 +43,5 @@ export type {
   TermTrialInput,
   TermTrialResult,
 } from "./terms.js";
+export { findTermSheet, knownTermSheets, runTermRelay } from "./term-relay.js";
+export type { TermJob, TermRelayReport, TermSideReport } from "./term-relay.js";
