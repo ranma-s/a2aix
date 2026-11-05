@@ -488,4 +488,29 @@ describe("term-by-term negotiation", () => {
       expect(decodeTermMessage(raw).ok).toBe(false);
     }
   });
+
+  it("refuses deep nesting, non-JSON values, accessors, and unknown fields instead of rewriting them", () => {
+    const base = { ...envelope("worker"), type: "TermPropose", termId: "ix:price" };
+    let deep: unknown = 1;
+    for (let level = 0; level < 200000; level += 1) {
+      deep = [deep];
+    }
+    const tricky = { ...base, value: 1 };
+    let reads = 0;
+    Object.defineProperty(tricky, "from", { enumerable: true, get: () => (reads++ === 0 ? "client" : "worker") });
+    const proto: unknown = JSON.parse('{"__proto__":{"amount":1}}');
+    for (const raw of [
+      { ...base, value: deep },
+      { ...base, value: Number.NaN },
+      { ...base, value: new Date(0) },
+      { ...base, value: proto },
+      { ...base, value: 1, evil: true },
+      { ...base, value: 1, signature: { verification: signatureVerification, material: "x", extra: 1 } },
+      tricky,
+    ]) {
+      expect(() => decodeTermMessage(raw)).not.toThrow();
+      expect(decodeTermMessage(raw).ok).toBe(false);
+    }
+    expect(decodeTermMessage({ ...base, value: 1 }).ok).toBe(true);
+  });
 });

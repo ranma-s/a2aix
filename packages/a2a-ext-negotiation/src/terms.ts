@@ -1214,7 +1214,127 @@ function decodeDefinition(value: unknown): TermDefinition | undefined {
   return { ...withCodes, label: names };
 }
 
-export function decodeTermMessage(raw: unknown): TermDecodeResult {
+export const maxTermMessageDepth = 64;
+
+type Snapshot = { readonly ok: true; readonly json: TermJson } | { readonly ok: false; readonly reason: string };
+
+function snapshotJson(value: unknown, depth: number): Snapshot {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return { ok: true, json: value };
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? { ok: true, json: value } : { ok: false, reason: "numbers must be finite" };
+  }
+  if (typeof value !== "object") {
+    return { ok: false, reason: "only JSON values are allowed" };
+  }
+  if (depth >= maxTermMessageDepth) {
+    return { ok: false, reason: `nesting deeper than ${String(maxTermMessageDepth)} is refused` };
+  }
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    return { ok: false, reason: "symbol keys are refused" };
+  }
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      return { ok: false, reason: "only plain arrays are allowed" };
+    }
+    const items: unknown[] = value;
+    const out: TermJson[] = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const slot = Object.getOwnPropertyDescriptor(items, index);
+      if (slot === undefined || !("value" in slot)) {
+        return { ok: false, reason: "arrays must not have holes or accessors" };
+      }
+      const child = snapshotJson(slot.value, depth + 1);
+      if (!child.ok) {
+        return child;
+      }
+      out.push(child.json);
+    }
+    return { ok: true, json: out };
+  }
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return { ok: false, reason: "only plain objects are allowed" };
+  }
+  const out: { [key: string]: TermJson } = {};
+  for (const key of Object.getOwnPropertyNames(value)) {
+    const slot = Object.getOwnPropertyDescriptor(value, key);
+    if (key === "__proto__" || slot === undefined || !("value" in slot) || slot.enumerable !== true) {
+      return { ok: false, reason: `field ${key} is not a plain data field` };
+    }
+    const child = snapshotJson(slot.value, depth + 1);
+    if (!child.ok) {
+      return child;
+    }
+    out[key] = child.json;
+  }
+  return { ok: true, json: out };
+}
+
+const envelopeFields = ["type", "from", "sentAt", "expiresAt", "prevHash", "signature"];
+const messageFields: { readonly [type: string]: readonly string[] } = {
+  TermPropose: ["termId", "value", "note"],
+  TermCounter: ["termId", "value", "note"],
+  TermAccept: ["termId", "valueHash", "value"],
+  TermDrop: ["termId"],
+  TermReopen: ["termId"],
+  TermRefuse: ["termId"],
+  TermAdd: ["definition", "required"],
+  DealDecline: ["reason"],
+  TermApproval: ["decision", "reopen"],
+  TermAgreementDraft: ["agreement"],
+};
+
+function onlyFields(value: TermJson | undefined, allowed: readonly string[]): boolean {
+  return isObject(value) && Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function checkKnownFields(message: TermJson): string | undefined {
+  if (!isObject(message) || typeof message["type"] !== "string") {
+    return "a message must be an object with a type";
+  }
+  const extra = messageFields[message["type"]];
+  if (extra === undefined) {
+    return "unknown message type";
+  }
+  if (!onlyFields(message, [...envelopeFields, ...extra])) {
+    return "the message has an unknown field";
+  }
+  if (!onlyFields(message["signature"], ["verification", "material"])) {
+    return "the signature has an unknown field";
+  }
+  const definition = message["definition"];
+  if (definition !== undefined && !onlyFields(definition, definitionKeys)) {
+    return "the term definition has an unknown field";
+  }
+  const agreement = message["agreement"];
+  if (agreement !== undefined) {
+    if (!onlyFields(agreement, agreementKeys) || !isObject(agreement) || !onlyFields(agreement["sheet"], sheetRefKeys)) {
+      return "the agreement has an unknown field";
+    }
+    const added = agreement["addedTerms"];
+    const terms = agreement["terms"];
+    if (isArray(added) && !added.every((entry) => onlyFields(entry, definitionKeys))) {
+      return "an added term definition has an unknown field";
+    }
+    if (isArray(terms) && !terms.every((entry) => onlyFields(entry, fixedTermKeys))) {
+      return "an agreed term has an unknown field";
+    }
+  }
+  return undefined;
+}
+
+export function decodeTermMessage(input: unknown): TermDecodeResult {
+  const snapshot = snapshotJson(input, 0);
+  if (!snapshot.ok) {
+    return { ok: false, reason: snapshot.reason };
+  }
+  const unknownField = checkKnownFields(snapshot.json);
+  if (unknownField !== undefined) {
+    return { ok: false, reason: unknownField };
+  }
+  const raw: unknown = snapshot.json;
   const problem = checkMessageShape(raw);
   if (problem !== undefined || !isLoose(raw)) {
     return { ok: false, reason: problem ?? "a message must be an object" };

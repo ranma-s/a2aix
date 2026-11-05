@@ -66,6 +66,7 @@ export {
   decodeTermMessage,
   durationUnits,
   initialSpecTerm,
+  maxTermMessageDepth,
   isCurrencyCode,
   isSafeRelativePath,
   isZoneName,

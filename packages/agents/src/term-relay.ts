@@ -1,10 +1,10 @@
-import { applyTermMessage, coreSheet, decodeTermMessage, openTermSession, webSiteSheet } from "@ix/a2a-ext-negotiation";
+import { applyTermMessage, coreSheet, decodeTermMessage, openTermSession, sameTermValue, webSiteSheet } from "@ix/a2a-ext-negotiation";
 import type { Clock, Party, PresetTerm, TermJson, TermMessage, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
 import type { JsonObject, JsonValue, StoredEvent } from "@ix/distribution";
 import type { JobBoard } from "./board.js";
 import { jobKind, jobTag, mockExtensionsHeader, negotiationKind, posterIssuer, unverifiedSig, workerIssuer } from "./kinds.js";
 import { redactFreeText } from "./redact.js";
-import { checkTermMandate, nextTurn } from "./terms.js";
+import { checkTermMandate, nextTurn, withinLimit } from "./terms.js";
 import type { TermAgentConfig, TermTrialEscalation } from "./terms.js";
 
 export const knownTermSheets: readonly TermSheet[] = [coreSheet, webSiteSheet];
@@ -43,6 +43,8 @@ type Side = {
   readonly party: Party;
   readonly issuer: string;
   readonly config: TermAgentConfig;
+  readonly jobId: string;
+  readonly postedJob: TermJob | undefined;
   session: TermSession | undefined;
   readonly applied: Set<string>;
   readonly refusals: string[];
@@ -153,16 +155,26 @@ async function loadEvents(board: JobBoard, jobId: string): Promise<StoredEvent[]
   return result.events.slice().sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 }
 
+const maxIdDigits = 9;
+
 function nextId(events: readonly StoredEvent[]): string {
   let max = 0;
   for (const event of events) {
+    if (event.issuer !== posterIssuer && event.issuer !== workerIssuer) {
+      continue;
+    }
     const suffix = event.id.startsWith("t-") ? event.id.slice(2) : "";
-    const value = /^\d+$/.test(suffix) ? Number(suffix) : 0;
+    const value = suffix.length <= maxIdDigits && /^\d+$/.test(suffix) ? Number(suffix) : 0;
     if (Number.isSafeInteger(value) && value > max) {
       max = value;
     }
   }
-  return `t-${String(max + 1).padStart(4, "0")}`;
+  const taken = new Set(events.map((event) => event.id));
+  let next = max + 1;
+  while (taken.has(`t-${String(next).padStart(4, "0")}`)) {
+    next += 1;
+  }
+  return `t-${String(next).padStart(4, "0")}`;
 }
 
 async function publish(input: {
@@ -202,19 +214,7 @@ async function sync(side: Side, board: JobBoard, jobId: string, clock: Clock): P
     }
     side.applied.add(event.id);
     if (event.kind === jobKind) {
-      if (side.session === undefined) {
-        const job = readTermJob(event.body);
-        const opened = job === undefined ? "the job event is not a term job" : openFor(job);
-        if (typeof opened === "string") {
-          side.refusals.push(opened);
-          side.stopped = true;
-        } else {
-          side.session = opened;
-          if (job !== undefined && side.party === "worker") {
-            side.shownFreeText.push(redactFreeText(job.description));
-          }
-        }
-      }
+      acceptJob(side, event);
       continue;
     }
     if (event.kind !== negotiationKind) {
@@ -248,6 +248,61 @@ async function sync(side: Side, board: JobBoard, jobId: string, clock: Clock): P
     if (decoded.message.from !== side.party && note !== undefined) {
       side.shownFreeText.push(redactFreeText(note));
     }
+  }
+}
+
+function sameJob(left: TermJob, right: TermJob): boolean {
+  return (
+    left.jobId === right.jobId &&
+    left.sheetId === right.sheetId &&
+    left.sheetVersion === right.sheetVersion &&
+    left.sheetSha256 === right.sheetSha256 &&
+    left.roundLimitPerTerm === right.roundLimitPerTerm &&
+    left.description === right.description &&
+    left.expiresAt === right.expiresAt &&
+    left.preset.length === right.preset.length &&
+    left.preset.every((entry, index) => {
+      const peer = right.preset[index];
+      return peer !== undefined && entry.termId === peer.termId && sameTermValue(entry.value, peer.value);
+    })
+  );
+}
+
+function acceptJob(side: Side, event: StoredEvent): void {
+  if (side.stopped) {
+    return;
+  }
+  if (event.issuer !== posterIssuer) {
+    side.refusals.push(`${event.id}: a job event from ${event.issuer} is not from the poster`);
+    return;
+  }
+  if (side.session !== undefined) {
+    side.refusals.push(`${event.id}: a second job event for the same job`);
+    return;
+  }
+  const job = readTermJob(event.body);
+  if (job === undefined) {
+    side.refusals.push(`${event.id}: the job event is not a term job`);
+    return;
+  }
+  if (job.jobId !== side.jobId) {
+    side.refusals.push(`${event.id}: the job id does not match the relay tag`);
+    return;
+  }
+  if (side.postedJob !== undefined && !sameJob(job, side.postedJob)) {
+    side.refusals.push(`${event.id}: the job on the relay is not the job this side posted`);
+    side.stopped = true;
+    return;
+  }
+  const opened = openFor(job);
+  if (typeof opened === "string") {
+    side.refusals.push(`${event.id}: ${opened}`);
+    side.stopped = true;
+    return;
+  }
+  side.session = opened;
+  if (side.party === "worker") {
+    side.shownFreeText.push(redactFreeText(job.description));
   }
 }
 
@@ -290,11 +345,13 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
   return true;
 }
 
-function newSide(party: Party, config: TermAgentConfig): Side {
+function newSide(party: Party, config: TermAgentConfig, jobId: string, postedJob: TermJob | undefined): Side {
   return {
     party,
     issuer: issuerOf(party),
     config,
+    jobId,
+    postedJob,
     session: undefined,
     applied: new Set<string>(),
     refusals: [],
@@ -327,8 +384,14 @@ export async function runTermRelay(input: {
       throw new Error(`${config.party} mandate is not usable: ${problem}`);
     }
   }
-  const poster = newSide("client", input.client);
-  const worker = newSide("worker", input.worker);
+  for (const entry of input.job.preset) {
+    const limit = input.client.mandate[entry.termId];
+    if (limit !== undefined && !withinLimit(limit, entry.value)) {
+      throw new Error(`client preset ${entry.termId} is outside the client's own mandate`);
+    }
+  }
+  const poster = newSide("client", input.client, input.job.jobId, input.job);
+  const worker = newSide("worker", input.worker, input.job.jobId, undefined);
   const posted = await publish({
     board: input.board,
     clock: input.clock,

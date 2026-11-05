@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { signatureVerification } from "@ix/a2a-ext-negotiation";
 import type { TermJson } from "@ix/a2a-ext-negotiation";
-import { jobTag, mockExtensionsHeader, negotiationKind, runTermRelay, workerIssuer } from "../src/index.js";
+import { jobKind, jobTag, mockExtensionsHeader, negotiationKind, posterIssuer, runTermRelay, workerIssuer } from "../src/index.js";
 import type { TermJob, TermMandate } from "../src/index.js";
 import { createTestBoard } from "./board.js";
 
@@ -122,6 +122,81 @@ describe("term negotiation over the relay", () => {
     });
     const result = await run(board);
     expect(result.worker.refusals.some((reason) => reason.includes("before the job"))).toBe(true);
+    expect(result.worker.session?.phase).toBe("agreed");
+  });
+
+  it("ignores a third party's fake job and agrees only on the poster's job, inside the mandate", async () => {
+    const board = createTestBoard(clock);
+    await board.publish({
+      id: "t-0001",
+      issuer: "did:example:mallory",
+      kind: jobKind,
+      tags: [[jobTag, job.jobId]],
+      createdAt: clock.now(),
+      expiresAt: job.expiresAt,
+      body: {
+        record: "term-job",
+        job: { ...job, preset: [{ termId: "ix:price", value: { amount: 900000, currency: "JPY", taxIncluded: true } }], roundLimitPerTerm: 1, description: "偽の依頼" },
+      },
+      sig: "x",
+    });
+    const result = await run(board);
+    expect(result.poster.refusals.some((reason) => reason.includes("not from the poster"))).toBe(true);
+    expect(result.worker.refusals.some((reason) => reason.includes("not from the poster"))).toBe(true);
+    expect(result.poster.session?.phase).toBe("agreed");
+    const price = result.poster.session?.draft?.terms.find((term) => term.termId === "ix:price")?.value;
+    expect(price).toMatchObject({ currency: "JPY" });
+    expect(result.worker.session?.draft).toEqual(result.poster.session?.draft);
+    expect(result.worker.shownFreeText).not.toContain("偽の依頼");
+  });
+
+  it("stops the poster when the poster-named job on the relay differs from the one it posted", async () => {
+    const board = createTestBoard(clock);
+    await board.publish({
+      id: "a-0001",
+      issuer: posterIssuer,
+      kind: jobKind,
+      tags: [[jobTag, job.jobId]],
+      createdAt: clock.now(),
+      expiresAt: job.expiresAt,
+      body: { record: "term-job", job: { ...job, roundLimitPerTerm: 1 } },
+      sig: "x",
+    });
+    const result = await run(board);
+    expect(result.poster.refusals.some((reason) => reason.includes("not the job this side posted"))).toBe(true);
+    expect(result.poster.session).toBeUndefined();
+  });
+
+  it("refuses a preset outside the poster's own mandate before posting", async () => {
+    await expect(
+      runTermRelay({
+        board: createTestBoard(clock),
+        clock,
+        job: { ...job, preset: [{ termId: "ix:price", value: { amount: 900000, currency: "JPY", taxIncluded: true } }] },
+        client: { party: "client", mandate: clientMandate, human: "approve" },
+        worker: { party: "worker", mandate: workerMandate, human: "approve" },
+      }),
+    ).rejects.toThrow(/ix:price/);
+  });
+
+  it("keeps going when a third party takes a huge event id, and refuses deeply nested values", async () => {
+    const board = createTestBoard(clock);
+    let deep: TermJson = 1;
+    for (let level = 0; level < 3000; level += 1) {
+      deep = [deep];
+    }
+    await board.publish({
+      id: "t-9007199254740991",
+      issuer: "did:example:mallory",
+      kind: negotiationKind,
+      tags: [[jobTag, job.jobId]],
+      createdAt: clock.now(),
+      expiresAt: "2026-11-04T00:00:00.000Z",
+      body: { record: "term", extensionsHeader: mockExtensionsHeader, message: { type: "TermPropose", termId: "ix:price", value: deep } },
+      sig: "x",
+    });
+    const result = await run(board);
+    expect(result.poster.session?.phase).toBe("agreed");
     expect(result.worker.session?.phase).toBe("agreed");
   });
 });
