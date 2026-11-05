@@ -46,3 +46,5 @@ export type {
 export { createTermSide, findTermSheet, knownTermSheets, runTermRelay } from "./term-relay.js";
 export type { TermJob, TermRelayReport, TermSideHandle, TermSideReport } from "./term-relay.js";
 export { sampleTermClientMandate, sampleTermJob, sampleTermWorkerMandate } from "./sample-terms.js";
+export { termInjectionCases } from "./term-injection.js";
+export type { TermInjectionCase, TermInjectionPlace } from "./term-injection.js";

@@ -45,6 +45,7 @@ type Side = {
   readonly config: TermAgentConfig;
   readonly jobId: string;
   readonly postedJob: TermJob | undefined;
+  readonly now: () => string;
   session: TermSession | undefined;
   readonly applied: Set<string>;
   readonly refusals: string[];
@@ -289,6 +290,11 @@ function acceptJob(side: Side, event: StoredEvent): void {
     side.refusals.push(`${event.id}: the job id does not match the relay tag`);
     return;
   }
+  if (Number.isNaN(Date.parse(job.expiresAt)) || Date.parse(job.expiresAt) <= Date.parse(side.now())) {
+    side.refusals.push(`${event.id}: the job has expired`);
+    side.stopped = true;
+    return;
+  }
   if (side.postedJob !== undefined && !sameJob(job, side.postedJob)) {
     side.refusals.push(`${event.id}: the job on the relay is not the job this side posted`);
     side.stopped = true;
@@ -345,13 +351,14 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
   return true;
 }
 
-function newSide(party: Party, config: TermAgentConfig, jobId: string, postedJob: TermJob | undefined): Side {
+function newSide(party: Party, config: TermAgentConfig, jobId: string, postedJob: TermJob | undefined, now: () => string): Side {
   return {
     party,
     issuer: issuerOf(party),
     config,
     jobId,
     postedJob,
+    now,
     session: undefined,
     applied: new Set<string>(),
     refusals: [],
@@ -401,7 +408,7 @@ export function createTermSide(input: {
       }
     }
   }
-  const side = newSide(input.config.party, input.config, input.jobId, input.postJob);
+  const side = newSide(input.config.party, input.config, input.jobId, input.postJob, input.clock.now);
   let needsPost = input.postJob !== undefined;
   return {
     party: side.party,

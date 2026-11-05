@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ix/a2a-ext-negotiation": "workspace:*",
     "@ix/agents": "workspace:*",
     "@ix/approval-app": "workspace:*",
     "@ix/distribution": "workspace:*",

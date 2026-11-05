@@ -1,8 +1,7 @@
 import { extensionUris } from "@ix/protocol-core";
 import type { JobBoard } from "@ix/agents";
-import { injectionCases } from "@ix/agents";
-import { proveDeadline, proveMandate, proveMessages } from "./run.js";
-import { runInjectionSuite } from "./injection.js";
+import { termInjectionCases } from "@ix/agents";
+import { proveTermDeadline, proveTermMandate, proveTermMessages, runTermInjectionSuite } from "./term-run.js";
 
 export const conformanceStatus = "partial" as const;
 
@@ -66,36 +65,37 @@ export type ConformanceResult = {
   readonly noteJa: string;
 };
 
-export { runInjectionSuite } from "./injection.js";
-export type { InjectionObservation, InjectionSuiteResult } from "./injection.js";
+
+export { proveTermDeadline, proveTermMandate, proveTermMessages, runTermInjectionSuite } from "./term-run.js";
+export type { TermInjectionObservation } from "./term-run.js";
 
 export async function runConformance(
   openBoard: (now: string) => JobBoard,
 ): Promise<readonly ConformanceResult[]> {
-  const messages = await proveMessages(openBoard);
-  const mandate = await proveMandate(openBoard);
-  await proveDeadline(openBoard);
-  const injection = await runInjectionSuite(openBoard);
+  const messages = await proveTermMessages(openBoard);
+  const mandate = await proveTermMandate(openBoard);
+  const deadline = await proveTermDeadline(openBoard);
+  const injection = await runTermInjectionSuite(openBoard);
+  const failed = injection.filter((observation) => !observation.ok);
   if (
-    messages.fuzzRejected < 13 ||
+    messages.fuzzRejected < 16 ||
     !messages.handAccepted ||
-    !messages.sawJobFields ||
-    !messages.sawLinkedDraft ||
-    !mandate.exactCap ||
-    !mandate.exactFloor ||
-    !mandate.oneAboveCap ||
-    !mandate.oneBelowFloor ||
-    !mandate.posterBlocked250000 ||
-    !mandate.workerBlocked1 ||
-    !mandate.laterRoundBlocked ||
-    !sameCases(injection.observations.map((item) => item.id)) ||
-    injection.verify.schema !== "pass" ||
-    injection.verify.replay !== "pass" ||
-    injection.verify.bounds !== "pass" ||
-    injection.verify.deadlines !== "pass" ||
-    injection.verify.phase !== "agreed"
+    !messages.sawTermJob ||
+    !messages.sameDraftBothSides ||
+    !messages.independentReplay ||
+    !mandate.exactEdgeAgreed ||
+    !mandate.oneOutsideNoDeal ||
+    !mandate.everyMessageInsideOwnMandate ||
+    !mandate.agreedInsideBothMandates ||
+    !deadline.beforeDeadlineAgreed ||
+    !deadline.atDeadlineSilent ||
+    !deadline.afterDeadlineSilent ||
+    !deadline.expiredMessageRefused ||
+    failed.length > 0 ||
+    !sameCases(injection.map((item) => item.id))
   ) {
-    throw new Error("conformance evidence does not support the recorded passes");
+    const detail = failed.map((observation) => `${observation.id}: ${observation.detail}`).join("; ");
+    throw new Error(`conformance evidence does not support the recorded passes ${detail}`);
   }
   return conformanceItems.map((item) => describe(item));
 }
@@ -118,22 +118,22 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
       return pass(
         item,
         "structure_only_signature_unverified",
-        "Dates are RFC 3339, money is integer JPY, and a job post includes the card address, both budget ends, and required skills. The agreement placeholder contains the amount and is not a hash. Signatures are not checked.",
-        "日付は RFC 3339、金額は円の整数、依頼票にはカードの住所と予算の下限と上限と必要なスキルがあります。合意のつなぎ文字には金額を含めますが、ハッシュではありません。署名は見ていません。",
+        "Term-by-term negotiation: sixteen malformed term messages are refused without throwing, a hand-written message decodes, the job is a typed term job, both sides rebuild the same agreement from relay events, and an independent replay of the relay agrees. Value hashes and prevHash are placeholders. Signatures are not checked.",
+        "項目を1つずつ確定させる交渉で確かめました。壊れたメッセージ16通を例外なしで断り、手で書いた正しいメッセージは読めます。依頼票は型の項目表です。双方は中継のイベントだけから同じ合意案を作り、中継の記録を別に読み直しても同じ合意になります。値の指紋と prevHash は仮の文字列です。署名は見ていません。",
       );
     case "proposals-stay-inside-mandate":
       return pass(
         item,
         "local_numeric_bound_signature_unverified",
-        "The mock re-checks its private numeric bound on the opening offer, on an exact edge, on a later round, and before approval. A different amount is not the same agreement. The mandate extension stays a stub. No mandate signature is checked.",
-        "模試は、最初の提案だけでなく、ちょうど上限と下限、次の往復、合意案、承認の前にも、自分の数値の範囲を見ます。金額が違えば、同じ合意としては受けません。委任の拡張はスタブのままです。委任状の署名は見ていません。",
+        "Each mock checks its own per-term mandate on every value it proposes, counters, or accepts. Ranges that meet exactly at the edge agree at the edge; ranges one yen apart end without a deal, and no message leaves its sender's range. The agreed terms are inside both mandates. The mandate extension stays a stub. No mandate signature is checked.",
+        "模試は、出す値・対案・同意のすべてで、項目ごとの自分の範囲を見ます。範囲がちょうど接するときは境目で合意し、1円離れているときは合意しません。どのメッセージも送り手の範囲の外に出ません。確定した値は双方の範囲の中です。委任の拡張はスタブのままです。委任状の署名は見ていません。",
       );
     case "responds-within-deadline":
       return pass(
         item,
         "injected_clock",
-        "With an injected clock, the mock sends no negotiation message at the deadline and does send one before it. Signatures are not checked.",
-        "渡した時計で、期限ちょうどには交渉のメッセージを出さず、期限前には出します。署名は見ていません。",
+        "With an injected clock, neither mock negotiates on a job at or after its expiry, both negotiate before it, and a message published after its own expiry is refused. Signatures are not checked.",
+        "渡した時計で、依頼票の期限ちょうど、およびそのあとには交渉のメッセージを出さず、期限前には出します。期限切れのメッセージは受け付けません。署名は見ていません。",
       );
     case "ignores-instructions-in-free-text":
       return pass(
@@ -141,7 +141,7 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
         "free_text_ignored_signature_unverified",
         `Executed against the mock agents and the relay: ${caseList()}. Structured fields stayed in force. Signatures, JCS, JWS, and prevHash are not checked.`,
         `模試と中継に対して実行した試験: ${caseList()}。型の項目はそのままです。署名は見ていません。`,
-        injectionCases.map((entry) => entry.id),
+        termInjectionCases.map((entry) => entry.id),
       );
   }
 }
@@ -183,15 +183,15 @@ function pass(
 }
 
 function caseList(): string {
-  return injectionCases.map((entry) => entry.id).join(", ");
+  return termInjectionCases.map((entry) => entry.id).join(", ");
 }
 
 function sameCases(ids: readonly string[]): boolean {
-  if (ids.length !== injectionCases.length) {
+  if (ids.length !== termInjectionCases.length) {
     return false;
   }
-  for (let index = 0; index < injectionCases.length; index += 1) {
-    const expected = injectionCases[index];
+  for (let index = 0; index < termInjectionCases.length; index += 1) {
+    const expected = termInjectionCases[index];
     if (expected === undefined || ids[index] !== expected.id) {
       return false;
     }
