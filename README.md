@@ -22,11 +22,11 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 
 土台に、交渉の段階、依頼票の手元の中継、模試の発注側・受注側、そして署名を見ない検査を足してあります。署名は確認しません。段階は [`docs/negotiation-states.md`](docs/negotiation-states.md)、配り方は [`docs/distribution.md`](docs/distribution.md)、手元だけの試し方は [`docs/local-trial.md`](docs/local-trial.md)、到達点は [`docs/feature-map.md`](docs/feature-map.md)、ここまでの記録は [`docs/retrospective.md`](docs/retrospective.md) です。
 
-- 交渉の段階機械。提案、対案、合意案、人間の承認・却下、3往復、期限を扱います。時計は外から渡します。署名の欄は後で確認するための空席で、中身は見ていません。
+- 項目を1つずつ確定させる交渉。仕事の種類ごとの項目表、項目ごとの値・対案・同意、確定した項目の一覧としての合意案、人間の承認・却下を扱います。時計は外から渡します。署名の欄は後で確認するための空席で、中身は見ていません。
 - 拡張の名乗り。`A2A-Extensions` に、4つの拡張のうち相手と自分の両方が持つものだけを返します。交渉は、委任・承認・履歴が揃ったときだけ有効です。違う版は、別の版で代わりに受けません。
 - 依頼票の掲載・検索・購読。タグ、種類、期間で探します。最初の置き場はメモリです。開いたノードだけが掲載を受けます。`id` と署名欄は渡された文字列のままで、確認しません。パッケージ自体はポートを開きません。
-- 模試の発注側と受注側。中継に依頼票と交渉メッセージを載せ、段階機械を進めます。金額が自分の上限・下限の外なら出しません。期限ちょうどには返事をしません。自由文は命令にしません。人に見せる文面からは連絡先を除きます。人の承認は台本です。
-- 署名を見ない検査。メッセージの形、段階機械への再生、数値の範囲、期限を見ます。署名、JCS、JWS、prevHash は未確認（`deferred`）のままです。
+- 模試の発注側と受注側。中継に依頼票と項目のメッセージを載せ、中継の記録だけから自分の状態を作ります。項目ごとの範囲の外の値は出しも同意もしません。依頼票の期限ちょうど・そのあとには交渉しません。自由文は命令にしません。人に見せる文面からは連絡先を除きます。人の承認は台本です。
+- 署名を見ない検査。中継の記録を別に読み直し、メッセージの形、送り主、項目の状態の進み方、期限を見ます。署名、JCS、JWS、prevHash は未確認（`deferred`）のままです。
 - 手元だけの試験。`deploy/local/compose.yaml` は `127.0.0.1` だけを聞き、ポートを公開しません。検証の `drive` も、同じ住所だけを起動して、終わったら止めます。
 - pnpm の TypeScript モノレポ。コア、アプリ、アダプタ、適合スイートをパッケージに分けてあります。
 - 依存の向きを CI で検査します。コアからアダプタへは戻れません。
@@ -38,11 +38,11 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 
 This revision is the foundation, the negotiation phase rules, an in-memory relay, mock poster and worker agents, and the checks that do not look at signatures. Signatures are not checked. The plain-language maps are [`docs/negotiation-states.md`](docs/negotiation-states.md), [`docs/distribution.md`](docs/distribution.md), [`docs/local-trial.md`](docs/local-trial.md), [`docs/feature-map.md`](docs/feature-map.md), and [`docs/retrospective.md`](docs/retrospective.md).
 
-- A negotiation phase machine: proposal, counter-proposal, agreement draft, human approve/reject, a 3-round cap, and deadlines. The clock is injected. The signature field is a placeholder and is not verified.
+- Term-by-term negotiation: term sheets per kind of job, per-term values, counters, and acceptance, an agreement that is the list of fixed terms, and human approve or reject. The clock is injected. The signature field is a placeholder and is not verified.
 - Extension activation. `A2A-Extensions` returns only the profile URIs both sides listed. Negotiation turns on only together with mandate, approval, and transcript. A different version is not answered with this one.
 - In-process publish, query, and subscribe by tag, kind, and time. The first store is memory. Only an open node accepts publish. `id` and `sig` are stored as given and are not checked. The package opens no port.
-- Mock poster and worker agents. They put the job and the negotiation messages on a relay and apply the phase machine. An offer outside their own numeric bound is not sent. Nothing is sent at the deadline. Free text is not an instruction. Contact details are removed from the copy a human would see. Human approval is a script.
-- Checks that do not look at a signature: message shape, phase-machine replay, numeric bounds, and deadlines. Signature, JCS, JWS, and prevHash stay `deferred`.
+- Mock poster and worker agents. They put the term job and term messages on a relay and rebuild their state only from relay events. A value outside their own per-term mandate is neither sent nor accepted. Nothing is negotiated at or after the job's expiry. Free text is not an instruction. Contact details are removed from the copy a human would see. Human approval is a script.
+- Checks that do not look at a signature: an independent replay of the relay events for message shape, issuers, the term machine, and deadlines. Signature, JCS, JWS, and prevHash stay `deferred`.
 - A private trial. `deploy/local/compose.yaml` binds `127.0.0.1` and publishes no ports. The verification drive starts that same address and stops it before exiting.
 - A pnpm TypeScript monorepo split into core, app, adapter, and conformance packages.
 - CI rejects a dependency that points the wrong way. Core cannot import adapters.
@@ -99,7 +99,7 @@ packages/identity             鍵操作の拒否。鍵そのものは無い
 packages/protocol-core        拡張 URI 4つと、A2A-Extensions、正規化バイトの SHA-256
 packages/distribution          依頼票の形とタグ検索。署名は見ない
 packages/log                   透明性ログのスタブ
-packages/a2a-ext-*             交渉の段階機械。委任範囲・承認・履歴はスタブ
+packages/a2a-ext-*             項目を1つずつ確定させる交渉の機械。委任範囲・承認・履歴はスタブ
 packages/node                  プロセス内の中継。パッケージはポートを開かない
 packages/agents                模試の発注側と受注側。署名は見ない
 packages/verify                署名を見ない検査。署名などは deferred
@@ -110,7 +110,7 @@ packages/conformance           適合テスト。4項目は範囲つき合格、
 deploy/                        設定例と、127.0.0.1 だけの試験
 vectors/                       固定ベクトルの説明。実体はパッケージのテスト。鍵は無い
 docs/spec/                     仕様（CC BY 4.0）
-docs/negotiation-states.md     交渉の段階。非エンジニア向け
+docs/negotiation-states.md     項目ごとの交渉の進み方。非エンジニア向け
 docs/distribution.md           依頼票の配り方。非エンジニア向け
 docs/local-trial.md            手元だけの試験。非エンジニア向け
 docs/feature-map.md            動くものと、まだないもの

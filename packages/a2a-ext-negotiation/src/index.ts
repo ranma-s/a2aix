@@ -2,57 +2,8 @@ import { uri as approvalUri } from "@ix/a2a-ext-approval";
 import { uri as mandateUri } from "@ix/a2a-ext-mandate";
 import { uri as transcriptUri } from "@ix/a2a-ext-transcript";
 
-export { apply } from "./apply.js";
-export type { AppliedTransition, Clock, RejectedTransition, TransitionResult } from "./apply.js";
-export {
-  awaitingPartyMetadataKey,
-  counterDecisions,
-  eventTypes,
-  humanDecisions,
-  machineStates,
-  negotiationMetadata,
-  negotiationPhases,
-  noDealReasons,
-  openNegotiation,
-  parties,
-  phaseMetadataKey,
-  reasonMetadataKey,
-  roundMetadataKey,
-  signatureVerification,
-  status,
-  taskStateFor,
-  taskStates,
-  uri,
-} from "./model.js";
-export type {
-  AgreementDraftMessage,
-  AgreedSession,
-  ApprovalDecisionMessage,
-  ApprovalMarks,
-  AwaitingApprovalSession,
-  AwaitingParty,
-  CounterDecision,
-  CounterProposalMessage,
-  EventType,
-  HumanDecision,
-  IdleSession,
-  LocalTerms,
-  MachineState,
-  Money,
-  NegotiationEvent,
-  NegotiationMetadata,
-  NegotiationPhase,
-  NegotiationRequest,
-  NegotiationSession,
-  NegotiatingSession,
-  NoDealReason,
-  NoDealSession,
-  Party,
-  ProposalMessage,
-  TaskState,
-  UnverifiedSignature,
-} from "./model.js";
-export { transitionTable } from "./table.js";
+export { parties, signatureVerification, status, uri } from "./model.js";
+export type { Clock, Party, UnverifiedSignature } from "./model.js";
 export { ianaZoneNames, tzdbVersion } from "./zones.js";
 export {
   applyTermMessage,
@@ -112,6 +63,5 @@ export type {
   TermStatus,
   TermValueType,
 } from "./terms.js";
-export type { GuardName, TransitionId, TransitionRow } from "./table.js";
 
 export const requiredExtensionUris = [mandateUri, approvalUri, transcriptUri] as const;

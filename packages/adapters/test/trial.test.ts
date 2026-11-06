@@ -1,38 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
   clockAt,
-  createPoster,
+  createTermSide,
   jobKind,
   jobTag,
-  runPosterWorker,
-  sampleJob,
+  runTermRelay,
   sampleNow,
-  samplePosterBound,
-  sampleWorkerBound,
+  sampleTermClientMandate,
+  sampleTermJob,
+  sampleTermWorkerMandate,
 } from "@ix/agents";
 import { createLocalRelay } from "../src/index.js";
 
-const humans = { client: "approve", worker: "approve" } as const;
-
 describe("relay trial", () => {
-  it("runs the mock agents through the local relay until both humans approve", async () => {
+  it("runs the term mock agents through the local relay until both humans approve", async () => {
     const clock = clockAt(sampleNow);
     const relay = createLocalRelay({ mode: "open", clock });
     const heard: string[] = [];
-    const sub = relay.subscribe({ tags: [{ name: jobTag, values: [sampleJob.jobId] }] }, (event) => {
+    const sub = relay.subscribe({ tags: [{ name: jobTag, values: [sampleTermJob.jobId] }] }, (event) => {
       heard.push(event.kind);
     });
     expect(sub.ok).toBe(true);
-    const report = await runPosterWorker({
+    const report = await runTermRelay({
       board: relay,
       clock,
-      job: sampleJob,
-      posterBound: samplePosterBound,
-      workerBound: sampleWorkerBound,
-      humans,
+      job: sampleTermJob,
+      client: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
+      worker: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
     });
-    expect(report.poster.phase).toBe("agreed");
-    expect(report.worker.phase).toBe("agreed");
+    expect(report.poster.session?.phase).toBe("agreed");
+    expect(report.worker.session?.phase).toBe("agreed");
     expect(heard[0]).toBe(jobKind);
     for (const event of report.events) {
       expect(event.signatureVerification).toBe("deferred");
@@ -45,17 +42,17 @@ describe("relay trial", () => {
   it("refuses the poster when the relay is closed", async () => {
     const clock = clockAt(sampleNow);
     const relay = createLocalRelay({ mode: "closed", clock });
-    const poster = createPoster({
+    const poster = createTermSide({
       board: relay,
       clock,
-      job: sampleJob,
-      bound: samplePosterBound,
-      human: "approve",
+      jobId: sampleTermJob.jobId,
+      config: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
+      postJob: sampleTermJob,
     });
     await poster.step();
-    expect(poster.session().phase).toBe("idle");
-    expect(poster.refusals().map((refusal) => refusal.reason)).toContain("closed");
-    expect(relay.query({ tags: [{ name: jobTag, values: [sampleJob.jobId] }] })).toEqual({
+    expect(poster.report().session).toBeUndefined();
+    expect(poster.report().refusals.some((reason) => reason.startsWith("public_publish_refused"))).toBe(true);
+    expect(relay.query({ tags: [{ name: jobTag, values: [sampleTermJob.jobId] }] })).toEqual({
       ok: true,
       events: [],
     });

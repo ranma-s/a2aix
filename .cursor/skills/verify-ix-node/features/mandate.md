@@ -14,7 +14,7 @@ The operator writes what the agent may agree to before any negotiation. The coun
 
 ## Driving it with verify-ix-node
 
-Blocked. `@ix/a2a-ext-mandate` exports the extension URI only. It does not build or sign a mandate. The mock poster and worker keep a private numeric bound and do not send that bound to the counterparty. That bound is not a mandate document.
+Blocked. `@ix/a2a-ext-mandate` exports the extension URI only. It does not build or sign a mandate. The mock poster and worker keep a private per-term mandate (ranges, lists, and held document hashes) and do not send it to the counterparty. That mandate is not a signed mandate document.
 
 ## Gotchas
 
