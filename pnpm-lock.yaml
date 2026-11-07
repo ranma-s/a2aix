@@ -130,7 +130,11 @@ importers:
 
   packages/distribution: {}
 
-  packages/identity: {}
+  packages/identity:
+    dependencies:
+      '@ix/jcs':
+        specifier: workspace:*
+        version: link:../jcs
 
   packages/jcs: {}
 

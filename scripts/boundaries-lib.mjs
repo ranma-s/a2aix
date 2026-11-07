@@ -104,6 +104,87 @@ export function isProtocolHashSource(fileName) {
   return normalize(fileName).includes("/packages/protocol-core/src/");
 }
 
+export function isIdentityKeySource(fileName) {
+  return normalize(fileName).includes("/packages/identity/src/");
+}
+
+function isStringArgument(node, text) {
+  return node !== undefined && ts.isStringLiteral(node) && node.text === text;
+}
+
+function isVerifyOnlyUsage(node) {
+  return (
+    node !== undefined &&
+    ts.isArrayLiteralExpression(node) &&
+    node.elements.length === 1 &&
+    isStringArgument(node.elements[0], "verify")
+  );
+}
+
+function subtleMethodCall(subtleNode) {
+  const member = subtleNode.parent;
+  if (member === undefined || propertyName(member) === undefined || member.expression !== subtleNode) {
+    return undefined;
+  }
+  const call = member.parent;
+  if (call === undefined || !ts.isCallExpression(call) || call.expression !== member) {
+    return undefined;
+  }
+  return { method: propertyName(member), call };
+}
+
+function checkSubtleAccess(violations, node, fileName, location) {
+  const used = subtleMethodCall(node);
+  if (used === undefined || !["digest", "importKey", "verify"].includes(used.method)) {
+    add(
+      violations,
+      "subtle-site",
+      `${location}: crypto.subtle may only be called directly as digest, importKey, or verify.`,
+    );
+    return;
+  }
+  if (used.method === "digest") {
+    return;
+  }
+  if (!isIdentityKeySource(fileName)) {
+    add(
+      violations,
+      "key-site",
+      `${location}: Ed25519 public-key verification is only allowed in packages/identity/src.`,
+    );
+    return;
+  }
+  const args = used.call.arguments;
+  if (used.method === "importKey") {
+    if (
+      args.length !== 5 ||
+      !isStringArgument(args[0], "raw") ||
+      !isStringArgument(args[2], "Ed25519") ||
+      args[3]?.kind !== ts.SyntaxKind.FalseKeyword ||
+      !isVerifyOnlyUsage(args[4])
+    ) {
+      add(
+        violations,
+        "key-import",
+        `${location}: importKey may only import a raw Ed25519 public key, not extractable, for verify only.`,
+      );
+    }
+    return;
+  }
+  if (args.length !== 4 || !isStringArgument(args[0], "Ed25519")) {
+    add(
+      violations,
+      "verify-algorithm",
+      `${location}: subtle.verify may only use the string literal "Ed25519".`,
+    );
+  }
+}
+
+function isAllowedImportKey(node, fileName) {
+  const object = node.expression;
+  return isIdentityKeySource(fileName) && object !== undefined && propertyName(object) === "subtle" && subtleMethodCall(object) !== undefined;
+}
+
 function propertyName(node) {
   if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
     return node.name.text;
@@ -370,7 +451,10 @@ export function evaluateSource(input) {
       }
     }
     const accessed = propertyName(node);
-    if (accessed !== undefined && bannedSigningNames.has(accessed)) {
+    if (accessed === "subtle") {
+      checkSubtleAccess(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
+    }
+    if (accessed !== undefined && bannedSigningNames.has(accessed) && !(accessed === "importKey" && isAllowedImportKey(node, input.fileName))) {
       add(
         violations,
         "signing-api",
@@ -1119,6 +1203,64 @@ export function runSelfTest() {
       "/virtual/packages/identity/src/index.ts",
       'export const exported = crypto.subtle["exportKey"]("raw");\n',
       "@ix/config",
+      [],
+    ),
+    "signing-api",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "identity may import a raw Ed25519 public key for verify and verify with it",
+    sourceCase(
+      "/virtual/packages/identity/src/signature.ts",
+      'export const key = await crypto.subtle.importKey("raw", new Uint8Array(32), "Ed25519", false, ["verify"]);\nexport const ok = await crypto.subtle.verify("Ed25519", key, new Uint8Array(64), new Uint8Array());\n',
+      "@ix/config",
+      [],
+    ),
+  );
+
+  for (const [label, code, reason] of [
+    ["importKey for signing is rejected", 'await crypto.subtle.importKey("raw", new Uint8Array(32), "Ed25519", false, ["sign"]);', "key-import"],
+    ["importKey of a private key format is rejected", 'await crypto.subtle.importKey("pkcs8", new Uint8Array(32), "Ed25519", false, ["verify"]);', "key-import"],
+    ["extractable importKey is rejected", 'await crypto.subtle.importKey("raw", new Uint8Array(32), "Ed25519", true, ["verify"]);', "key-import"],
+    ["importKey of another algorithm is rejected", 'await crypto.subtle.importKey("raw", new Uint8Array(32), "ECDSA", false, ["verify"]);', "key-import"],
+    ["verify with another algorithm is rejected", 'await crypto.subtle.verify("ECDSA", key, sig, data);', "verify-algorithm"],
+    ["an alias of crypto.subtle is rejected", "const subtle = crypto.subtle;", "subtle-site"],
+    ["destructuring crypto.subtle is rejected", "const { verify } = crypto.subtle;", "subtle-site"],
+    ["subtle.sign in identity is rejected", 'await crypto.subtle.sign("Ed25519", key, data);', "signing-api"],
+    ["subtle.generateKey in identity is rejected", 'await crypto.subtle.generateKey("Ed25519", false, ["sign"]);', "signing-api"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase("/virtual/packages/identity/src/signature.ts", `${code}\n`, "@ix/config", []),
+      reason,
+    );
+  }
+
+  for (const [label, file, pkg] of [
+    ["subtle.verify outside identity is rejected", "/virtual/packages/node/src/index.ts", "@ix/node"],
+    ["subtle.verify in an identity test is rejected", "/virtual/packages/identity/test/identity.test.ts", "@ix/config"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase(file, 'export const ok = await crypto.subtle.verify("Ed25519", key, sig, data);\n', pkg, []),
+      "key-site",
+    );
+  }
+
+  cases += 1;
+  assertReason(
+    failures,
+    "importKey outside identity is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'export const key = await crypto.subtle.importKey("raw", new Uint8Array(32), "Ed25519", false, ["verify"]);\n',
+      "@ix/protocol-core",
       [],
     ),
     "signing-api",
