@@ -131,8 +131,17 @@ describe("independent term transcript verification", () => {
     }
     const shuffled = await verifyTermTranscript({ jobId: "j", events: toEvents(job, [b, a, ...rest]), issuers, ...deferredInput });
     expect(shuffled).toMatchObject({ chain: "pass", replay: "pass", phase: "agreed", forks: 0 });
-    const forked = await verifyTermTranscript({ jobId: "j", events: toEvents(job, [a, b, ...rest, { ...b, expiresAt: a.expiresAt }]), issuers, ...deferredInput });
+    const fork: TermMessage = { ...envelope("client"), type: "TermPropose", termId: "ix:revision-limit", value: 2, prevHash: a.prevHash };
+    const forked = await verifyTermTranscript({ jobId: "j", events: toEvents(job, [a, b, ...rest, fork]), issuers, ...deferredInput });
     expect(forked).toMatchObject({ chain: "pass", phase: "agreed", forks: 1 });
+    const twice: TermMessage = { ...envelope("worker"), type: "TermPropose", termId: "ix:price", value: yen(1), prevHash: a.prevHash };
+    const twiceReport = await verifyTermTranscript({ jobId: "j", events: toEvents(job, [a, b, ...rest, twice]), issuers, ...deferredInput });
+    expect(twiceReport).toMatchObject({ chain: "fail", forks: 0 });
+    expect(twiceReport.detail).toContain("two messages after the same message");
+    const badFork: TermMessage = { ...envelope("client"), type: "TermAccept", termId: "ix:price", valueHash: "0".repeat(64), value: yen(180000), prevHash: b.prevHash };
+    const badForkReport = await verifyTermTranscript({ jobId: "j", events: toEvents(job, [a, b, ...rest, { ...badFork, from: "worker" }]), issuers, ...deferredInput });
+    expect(badForkReport).toMatchObject({ chain: "fail", forks: 0 });
+    expect(badForkReport.detail).toContain("not a valid move");
     const repointed = toEvents(job, [{ ...b, prevHash: a.prevHash }, { ...a, prevHash: "0".repeat(64) }, ...rest]);
     const repointedReport = await verifyTermTranscript({ jobId: "j", events: repointed, issuers, ...deferredInput });
     expect(repointedReport.chain).toBe("fail");

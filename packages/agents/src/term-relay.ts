@@ -1,9 +1,11 @@
 import {
   applyChainedTermMessage,
+  chainedHashes,
   coreSheet,
   decodeTermMessage,
   expectedPrevHash,
   openTermSession,
+  presetChainProblem,
   sameTermValue,
   sealTermMessage,
   termHash,
@@ -158,6 +160,10 @@ async function openFor(job: TermJob): Promise<TermSession | string> {
   if (job.sheetSha256 !== (await termSheetHash(sheet))) {
     return "the job's sheetSha256 does not match the term sheet";
   }
+  const presetProblem = await presetChainProblem(job.preset);
+  if (presetProblem !== undefined) {
+    return presetProblem;
+  }
   const opened = openTermSession({
     jobId: job.jobId,
     sheet,
@@ -289,6 +295,21 @@ async function drainPending(side: Side, clock: Clock): Promise<void> {
     const note = noteOf(next.message);
     if (next.message.from !== side.party && note !== undefined) {
       side.shownFreeText.push(redactFreeText(note));
+    }
+  }
+  await dropForks(side);
+}
+
+async function dropForks(side: Side): Promise<void> {
+  if (side.session === undefined || side.pending.length === 0) {
+    return;
+  }
+  const behind = new Set((await chainedHashes(side.session)).slice(0, -1));
+  for (let index = side.pending.length - 1; index >= 0; index -= 1) {
+    const entry = side.pending[index];
+    if (entry !== undefined && behind.has(entry.message.prevHash)) {
+      side.pending.splice(index, 1);
+      side.refusals.push(`${entry.id}: a fork; another message already continued the hash chain from the same message`);
     }
   }
 }

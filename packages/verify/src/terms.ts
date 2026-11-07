@@ -1,4 +1,4 @@
-import { applyChainedTermMessage, coreSheet, decodeTermMessage, expectedPrevHash, openTermSession, termHash, termSheetHash, webSiteSheet } from "@ix/a2a-ext-negotiation";
+import { applyChainedTermMessage, coreSheet, decodeTermMessage, expectedPrevHash, openTermSession, presetChainProblem, termHash, termSheetHash, webSiteSheet } from "@ix/a2a-ext-negotiation";
 import type { FixedTerm, Party, PresetTerm, TermJson, TermMessage, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
 import type { JsonObject, JsonValue } from "@ix/distribution";
 import { deferredChecks } from "./deferred.js";
@@ -60,6 +60,10 @@ async function openFromJob(body: JsonObject, jobId: string): Promise<TermSession
   }
   if (sheetSha256 !== (await termSheetHash(sheet))) {
     return "the job's sheetSha256 does not match the term sheet";
+  }
+  const presetProblem = await presetChainProblem(entries);
+  if (presetProblem !== undefined) {
+    return presetProblem;
   }
   const opened = openTermSession({ jobId, sheet, sheetSha256, preset: entries, roundLimitPerTerm: roundLimit, anchorHash: await termHash(job) });
   return opened.ok ? opened.session : opened.reason;
@@ -139,20 +143,22 @@ export async function verifyTermTranscript(input: {
     }
     pending.push({ label: `message ${String(count)}`, message: decoded.message, createdAt });
   }
-  const chained = new Set<string>();
+  const states = new Map<string, { readonly session: TermSession; readonly senders: Set<Party> }>();
   for (let linked = 0; session !== undefined && linked <= count; linked += 1) {
     const current: TermSession = session;
     const expected = await expectedPrevHash(current);
-    chained.add(expected);
     const index = pending.findIndex((entry) => entry.message.prevHash === expected);
     const next = pending[index];
     if (next === undefined) {
       break;
     }
     pending.splice(index, 1);
+    const state = states.get(expected) ?? { session: current, senders: new Set<Party>() };
+    state.senders.add(next.message.from);
+    states.set(expected, state);
     const applied = await applyChainedTermMessage(current, next.message, { now: () => next.createdAt });
     if (!applied.ok) {
-      if (/Hash|Sha256|anchor/.test(applied.reason)) {
+      if (applied.chain) {
         chain = "fail";
       }
       replay = "fail";
@@ -162,14 +168,35 @@ export async function verifyTermTranscript(input: {
     session = applied.session;
   }
   if (session !== undefined) {
-    chained.add(await expectedPrevHash(session));
+    const last = await expectedPrevHash(session);
+    states.set(last, states.get(last) ?? { session, senders: new Set<Party>() });
   }
-  const broken = pending.filter((entry) => !chained.has(entry.message.prevHash));
-  if (broken.length > 0) {
+  let forks = 0;
+  let broken = 0;
+  for (const entry of pending) {
+    const state = states.get(entry.message.prevHash);
+    if (state === undefined) {
+      broken += 1;
+      continue;
+    }
+    if (state.senders.has(entry.message.from)) {
+      chain = "fail";
+      problems.push(`${entry.label}: ${entry.message.from} sent two messages after the same message`);
+      continue;
+    }
+    state.senders.add(entry.message.from);
+    const checked = await applyChainedTermMessage(state.session, entry.message, { now: () => entry.createdAt });
+    if (!checked.ok) {
+      chain = "fail";
+      problems.push(`${entry.label}: a fork that is not a valid move: ${checked.reason}`);
+      continue;
+    }
+    forks += 1;
+  }
+  if (broken > 0) {
     chain = "fail";
-    problems.push(`${String(broken.length)} message(s) point to nothing in the hash chain`);
+    problems.push(`${String(broken)} message(s) point to nothing in the hash chain`);
   }
-  const forks = pending.length - broken.length;
   if (session === undefined) {
     replay = "fail";
     problems.push("no job record from the client");

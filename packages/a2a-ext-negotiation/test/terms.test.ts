@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  manifestHash,
+  presetChainProblem,
   requiredExtensionUris,
   status,
   uri,
@@ -525,5 +527,14 @@ describe("term-by-term negotiation", () => {
       "https://w3id.org/a2a-job/ext/approval/v1",
       "https://w3id.org/a2a-job/ext/transcript/v1",
     ]);
+  });
+});
+
+describe("preset documents in the hash chain", () => {
+  it("rejects a preset manifestSha256 that does not match its file list", async () => {
+    const files = [{ path: "spec.md", sha256: "a".repeat(64), bytes: 10 }];
+    const good = { files, manifestSha256: await manifestHash(files) };
+    expect(await presetChainProblem([{ termId: "ix:initial-spec", value: good }])).toBeUndefined();
+    expect(await presetChainProblem([{ termId: "ix:initial-spec", value: { ...good, manifestSha256: "0".repeat(64) } }])).toContain("manifestSha256");
   });
 });

@@ -1,6 +1,6 @@
 import { hashCanonicalBody } from "@ix/protocol-core";
 import type { Clock } from "./model.js";
-import type { TermJson, TermMessage, TermResult, TermSession, TermSheet, TermState } from "./terms.js";
+import type { PresetTerm, TermJson, TermMessage, TermSession, TermSheet, TermState } from "./terms.js";
 import { applyTermMessage } from "./terms.js";
 
 export const unsealedHash = "unverified" as const;
@@ -21,6 +21,35 @@ export function manifestHash(files: TermJson): Promise<string> {
 
 function isObject(value: TermJson | undefined): value is { readonly [key: string]: TermJson } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export type ChainedTermResult =
+  | { readonly ok: true; readonly session: TermSession }
+  | { readonly ok: false; readonly reason: string; readonly chain: boolean };
+
+export async function chainedHashes(session: TermSession): Promise<string[]> {
+  const hashes = [session.anchor];
+  for (const message of session.transcript) {
+    hashes.push(await termHash(message));
+  }
+  return hashes;
+}
+
+async function documentProblem(value: TermJson): Promise<string | undefined> {
+  if (isObject(value) && typeof value["manifestSha256"] === "string" && value["files"] !== undefined) {
+    return value["manifestSha256"] === (await manifestHash(value["files"])) ? undefined : "manifestSha256 does not match the file list";
+  }
+  return undefined;
+}
+
+export async function presetChainProblem(preset: readonly PresetTerm[]): Promise<string | undefined> {
+  for (const entry of preset) {
+    const problem = await documentProblem(entry.value);
+    if (problem !== undefined) {
+      return `preset ${entry.termId}: ${problem}`;
+    }
+  }
+  return undefined;
 }
 
 export async function expectedPrevHash(session: TermSession): Promise<string> {
@@ -92,13 +121,8 @@ async function chainProblem(session: TermSession, message: TermMessage): Promise
       }
       return message.agreementHash === (await termHash(session.draft)) ? undefined : "agreementHash does not match the agreement draft";
     case "TermPropose":
-    case "TermCounter": {
-      const value = message.value;
-      if (isObject(value) && typeof value["manifestSha256"] === "string" && value["files"] !== undefined) {
-        return value["manifestSha256"] === (await manifestHash(value["files"])) ? undefined : "manifestSha256 does not match the file list";
-      }
-      return undefined;
-    }
+    case "TermCounter":
+      return documentProblem(message.value);
     case "TermAdd":
     case "TermDrop":
     case "TermReopen":
@@ -108,11 +132,11 @@ async function chainProblem(session: TermSession, message: TermMessage): Promise
   }
 }
 
-export async function applyChainedTermMessage(session: TermSession, message: TermMessage, clock: Clock): Promise<TermResult> {
+export async function applyChainedTermMessage(session: TermSession, message: TermMessage, clock: Clock): Promise<ChainedTermResult> {
   const structural = applyTermMessage(session, message, clock);
   if (!structural.ok) {
-    return structural;
+    return { ok: false, reason: structural.reason, chain: false };
   }
   const problem = await chainProblem(session, message);
-  return problem === undefined ? structural : { ok: false, reason: problem };
+  return problem === undefined ? structural : { ok: false, reason: problem, chain: true };
 }
