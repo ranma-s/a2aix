@@ -6,13 +6,12 @@ import type { TermJob, TermMandate } from "../src/index.js";
 import { createTestBoard } from "./board.js";
 
 const clock = { now: () => "2026-11-03T00:00:00.000Z" };
-const sha = (digit: string): string => digit.repeat(64);
 
 const job: TermJob = {
   jobId: "job-relay-1",
   sheetId: "ix:sheet/web-site",
   sheetVersion: 1,
-  sheetSha256: sha("a"),
+  sheetSha256: "1ef12f30693ddfc3f6f4eb9f48a87a95aee08aeabf39ae6b8c714a0cda80c67a",
   preset: [{ termId: "web:responsive", value: true }],
   roundLimitPerTerm: 3,
   description: "小さな会社のサイトです。質問は tanaka@example.com まで",

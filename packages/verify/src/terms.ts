@@ -1,5 +1,5 @@
-import { applyTermMessage, coreSheet, decodeTermMessage, openTermSession, webSiteSheet } from "@ix/a2a-ext-negotiation";
-import type { FixedTerm, Party, PresetTerm, TermJson, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
+import { applyChainedTermMessage, coreSheet, decodeTermMessage, expectedPrevHash, openTermSession, termHash, termSheetHash, webSiteSheet } from "@ix/a2a-ext-negotiation";
+import type { FixedTerm, Party, PresetTerm, TermJson, TermMessage, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
 import type { JsonObject, JsonValue } from "@ix/distribution";
 import { deferredChecks } from "./deferred.js";
 
@@ -8,6 +8,8 @@ export type TermVerifyReport = {
   readonly issuers: "pass" | "fail";
   readonly replay: "pass" | "fail";
   readonly deadlines: "pass" | "fail";
+  readonly chain: "pass" | "fail";
+  readonly forks: number;
   readonly phase: string;
   readonly messageCount: number;
   readonly terms: readonly FixedTerm[];
@@ -32,7 +34,7 @@ function byId(left: JsonValue, right: JsonValue): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function openFromJob(body: JsonObject, jobId: string): TermSession | string {
+async function openFromJob(body: JsonObject, jobId: string): Promise<TermSession | string> {
   const job = body["job"];
   if (!isObject(job) || text(job, "jobId") !== jobId) {
     return "the job record does not name this job";
@@ -56,27 +58,30 @@ function openFromJob(body: JsonObject, jobId: string): TermSession | string {
     const value: TermJson = entry["value"];
     entries.push({ termId, value });
   }
-  const opened = openTermSession({ jobId, sheet, sheetSha256, preset: entries, roundLimitPerTerm: roundLimit });
+  if (sheetSha256 !== (await termSheetHash(sheet))) {
+    return "the job's sheetSha256 does not match the term sheet";
+  }
+  const opened = openTermSession({ jobId, sheet, sheetSha256, preset: entries, roundLimitPerTerm: roundLimit, anchorHash: await termHash(job) });
   return opened.ok ? opened.session : opened.reason;
 }
 
-export function verifyTermTranscript(input: {
+export async function verifyTermTranscript(input: {
   readonly jobId: string;
   readonly events: readonly JsonValue[];
   readonly issuers: { readonly client: string; readonly worker: string };
   readonly signature: string;
   readonly jws: string;
-  readonly prevHash: string;
-  readonly jcsBody: JsonValue;
-}): TermVerifyReport {
-  const deferred = deferredChecks({ signature: input.signature, jws: input.jws, prevHash: input.prevHash, jcsBody: input.jcsBody });
+}): Promise<TermVerifyReport> {
+  const deferred = deferredChecks({ signature: input.signature, jws: input.jws });
   const problems: string[] = [];
   let schema: "pass" | "fail" = "pass";
   let issuers: "pass" | "fail" = "pass";
   let replay: "pass" | "fail" = "pass";
   let deadlines: "pass" | "fail" = "pass";
+  let chain: "pass" | "fail" = "pass";
   let session: TermSession | undefined;
   let count = 0;
+  const pending: { readonly label: string; readonly message: TermMessage; readonly createdAt: string }[] = [];
   for (const event of input.events.slice().sort(byId)) {
     if (!isObject(event) || !isObject(event["body"])) {
       schema = "fail";
@@ -97,7 +102,7 @@ export function verifyTermTranscript(input: {
         problems.push("a second job record");
         continue;
       }
-      const opened = openFromJob(body, input.jobId);
+      const opened = await openFromJob(body, input.jobId);
       if (typeof opened === "string") {
         replay = "fail";
         problems.push(opened);
@@ -132,14 +137,39 @@ export function verifyTermTranscript(input: {
       problems.push(`message ${String(count)}: before the job`);
       continue;
     }
-    const applied = applyTermMessage(session, decoded.message, { now: () => createdAt });
+    pending.push({ label: `message ${String(count)}`, message: decoded.message, createdAt });
+  }
+  const chained = new Set<string>();
+  for (let linked = 0; session !== undefined && linked <= count; linked += 1) {
+    const current: TermSession = session;
+    const expected = await expectedPrevHash(current);
+    chained.add(expected);
+    const index = pending.findIndex((entry) => entry.message.prevHash === expected);
+    const next = pending[index];
+    if (next === undefined) {
+      break;
+    }
+    pending.splice(index, 1);
+    const applied = await applyChainedTermMessage(current, next.message, { now: () => next.createdAt });
     if (!applied.ok) {
+      if (/Hash|Sha256|anchor/.test(applied.reason)) {
+        chain = "fail";
+      }
       replay = "fail";
-      problems.push(`message ${String(count)}: ${applied.reason}`);
+      problems.push(`${next.label}: ${applied.reason}`);
       continue;
     }
     session = applied.session;
   }
+  if (session !== undefined) {
+    chained.add(await expectedPrevHash(session));
+  }
+  const broken = pending.filter((entry) => !chained.has(entry.message.prevHash));
+  if (broken.length > 0) {
+    chain = "fail";
+    problems.push(`${String(broken.length)} message(s) point to nothing in the hash chain`);
+  }
+  const forks = pending.length - broken.length;
   if (session === undefined) {
     replay = "fail";
     problems.push("no job record from the client");
@@ -149,6 +179,8 @@ export function verifyTermTranscript(input: {
     issuers,
     replay,
     deadlines,
+    chain,
+    forks,
     phase: session?.phase ?? "",
     messageCount: count,
     terms: session?.draft?.terms ?? [],

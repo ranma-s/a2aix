@@ -184,16 +184,21 @@ try {
       throw new Error("event was not a deferred record");
     }
   }
-  const report = verifyTermTranscript({
+  const report = await verifyTermTranscript({
     jobId: sampleTermJob.jobId,
     events,
     issuers: { client: posterIssuer, worker: workerIssuer },
     signature: "unverified-placeholder",
     jws: "unverified-placeholder",
-    prevHash: "unverified",
-    jcsBody: events[0] ?? null,
   });
-  if (report.schema !== "pass" || report.issuers !== "pass" || report.replay !== "pass" || report.deadlines !== "pass" || report.phase !== "agreed") {
+  if (
+    report.schema !== "pass" ||
+    report.issuers !== "pass" ||
+    report.replay !== "pass" ||
+    report.deadlines !== "pass" ||
+    report.chain !== "pass" ||
+    report.phase !== "agreed"
+  ) {
     throw new Error(`ix-verify failed: ${report.detail}`);
   }
   for (const term of report.terms) {
@@ -221,6 +226,8 @@ try {
       replay: report.replay,
       bounds: "pass",
       deadlines: report.deadlines,
+      chain: report.chain,
+      forks: report.forks,
       phase: report.phase,
       messages: report.messageCount,
       deferred: report.deferred.map((check) => check.name),

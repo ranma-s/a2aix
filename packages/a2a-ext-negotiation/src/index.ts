@@ -6,6 +6,16 @@ export { parties, signatureVerification, status, uri } from "./model.js";
 export type { Clock, Party, UnverifiedSignature } from "./model.js";
 export { ianaZoneNames, tzdbVersion } from "./zones.js";
 export {
+  applyChainedTermMessage,
+  expectedPrevHash,
+  expectedValueHash,
+  manifestHash,
+  sealTermMessage,
+  termHash,
+  termSheetHash,
+  unsealedHash,
+} from "./chain.js";
+export {
   applyTermMessage,
   buildTermAgreement,
   checkTermDefinition,

@@ -13,9 +13,7 @@ const blockedFeatures = [
   "log",
   "mcp",
   "signature",
-  "jcs",
   "jws",
-  "prevHash",
 ];
 
 const drivenFeatures = [
@@ -123,7 +121,8 @@ function drive() {
     protocolFeaturesDriven: ok ? drivenFeatures : [],
     blockedFeatures,
     conformance: "partial-items-3-6-pass-signatures-deferred",
-    deferredChecks: ["signature", "jcs", "jws", "prevHash"],
+    deferredChecks: ["signature", "jws"],
+    hashChain: "jcs-sha256-checked",
     ok,
     steps: steps.map((step) => ({
       command: step.command,
@@ -142,7 +141,7 @@ function drive() {
   console.log(`drive: ${ok ? "ok" : "failed"}`);
   console.log(
     ok
-      ? "drive: localhost relay on 127.0.0.1 exercised; signatures, JCS, JWS, and prevHash stay deferred"
+      ? "drive: localhost relay on 127.0.0.1 exercised; the JCS SHA-256 hash chain was checked; signatures and JWS stay deferred"
       : "drive: failed",
   );
   if (!ok) {

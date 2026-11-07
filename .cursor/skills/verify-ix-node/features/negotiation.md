@@ -8,7 +8,7 @@
 - Term messages: `TermPropose`, `TermCounter`, `TermAccept`, `TermAdd`, `TermDrop`, `TermReopen`, `TermRefuse`, `DealDecline`, `TermAgreementDraft`, `TermApproval`.
 - Each side rebuilds its own session only from relay events, decoding each with `decodeTermMessage` and refusing malformed records, mismatched issuers, and messages before the job.
 - The agreement draft is the sorted list of fixed terms and must equal the rebuild from history before the humans decide.
-- The machine does not sign, hash, or check a mandate. `valueHash`, `prevHash`, and `transcriptHash` are placeholders.
+- The machine does not sign or check a mandate. Messages carry a SHA-256 of JCS hash chain (T23); each side applies relay messages in chain order and refuses a message whose hashes do not match.
 
 ## How to get to it (user POV)
 
