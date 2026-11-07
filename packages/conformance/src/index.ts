@@ -118,8 +118,8 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
       return pass(
         item,
         "structure_only_signature_unverified",
-        "Term-by-term negotiation: sixteen malformed term messages are refused without throwing, a hand-written message decodes, the job is a typed term job, both sides rebuild the same agreement from relay events, and an independent replay of the relay agrees. Value hashes and prevHash are placeholders. Signatures are not checked.",
-        "項目を1つずつ確定させる交渉で確かめました。壊れたメッセージ16通を例外なしで断り、手で書いた正しいメッセージは読めます。依頼票は型の項目表です。双方は中継のイベントだけから同じ合意案を作り、中継の記録を別に読み直しても同じ合意になります。値の指紋と prevHash は仮の文字列です。署名は見ていません。",
+        "Term-by-term negotiation: sixteen malformed term messages are refused without throwing, a hand-written message decodes, the job is a typed term job, both sides rebuild the same agreement from relay events, and an independent replay of the relay agrees. Every message carries a JCS SHA-256 hash chain (prevHash, valueHash, transcriptHash, agreementHash) that both sides and the replay check. Signatures and JWS are not checked.",
+        "項目を1つずつ確定させる交渉で確かめました。壊れたメッセージ16通を例外なしで断り、手で書いた正しいメッセージは読めます。依頼票は型の項目表です。双方は中継のイベントだけから同じ合意案を作り、中継の記録を別に読み直しても同じ合意になります。どのメッセージも JCS で並べ直した SHA-256 の指紋の鎖（prevHash、valueHash、transcriptHash、agreementHash）でつながり、双方と読み直しがそれを確かめます。署名と JWS は見ていません。",
       );
     case "proposals-stay-inside-mandate":
       return pass(
@@ -139,7 +139,7 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
       return pass(
         item,
         "free_text_ignored_signature_unverified",
-        `Executed against the mock agents and the relay: ${caseList()}. Structured fields stayed in force. Signatures, JCS, JWS, and prevHash are not checked.`,
+        `Executed against the mock agents and the relay: ${caseList()}. Structured fields stayed in force. Signatures and JWS are not checked.`,
         `模試と中継に対して実行した試験: ${caseList()}。型の項目はそのままです。署名は見ていません。`,
         termInjectionCases.map((entry) => entry.id),
       );

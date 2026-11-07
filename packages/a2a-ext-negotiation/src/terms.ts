@@ -95,7 +95,7 @@ export type TermAcceptMessage = Envelope & {
   readonly type: "TermAccept";
   readonly termId: string;
   readonly value?: TermJson;
-  readonly valueHash: typeof valueHashVerification;
+  readonly valueHash: string;
 };
 
 export type TermAddMessage = Envelope & {
@@ -128,6 +128,7 @@ export type TermApprovalMessage = Envelope & {
   readonly type: "TermApproval";
   readonly decision: "approve" | "reject" | "revise";
   readonly reopen?: readonly string[];
+  readonly agreementHash?: string;
 };
 
 export type TermMessage =
@@ -200,6 +201,7 @@ export type TermSession = {
   readonly approvals: readonly Party[];
   readonly reason?: TermNoDealReason;
   readonly transcript: readonly TermMessage[];
+  readonly anchor: string;
   readonly signatureVerification: typeof signatureVerification;
 };
 
@@ -664,6 +666,7 @@ export function openTermSession(input: {
   readonly sheetSha256: string;
   readonly preset: readonly PresetTerm[];
   readonly roundLimitPerTerm: number;
+  readonly anchorHash?: string;
 }): TermResult {
   if (!Number.isSafeInteger(input.roundLimitPerTerm) || input.roundLimitPerTerm < 1) {
     return { ok: false, reason: "roundLimitPerTerm must be a positive integer" };
@@ -717,6 +720,7 @@ export function openTermSession(input: {
       added: [],
       approvals: [],
       transcript: [],
+      anchor: input.anchorHash ?? "unverified",
       signatureVerification,
     },
   };
@@ -833,6 +837,9 @@ function checkMessageShape(raw: unknown): string | undefined {
     case "DealDecline":
       return typeof raw["reason"] === "string" ? undefined : "a decline needs a reason";
     case "TermApproval":
+      if (raw["agreementHash"] !== undefined && typeof raw["agreementHash"] !== "string") {
+        return "agreementHash must be text";
+      }
       return raw["reopen"] === undefined || isStringList(raw["reopen"]) ? undefined : "reopen must be a list of termIds";
     case "TermAgreementDraft": {
       const agreement = raw["agreement"];
@@ -1163,6 +1170,7 @@ function applyApproval(session: TermSession, message: TermApprovalMessage): Term
       added: session.added,
       approvals: [],
       transcript: session.transcript,
+      anchor: session.anchor,
       signatureVerification: session.signatureVerification,
     };
     return { ok: true, session: reopened };
@@ -1281,7 +1289,7 @@ const messageFields: { readonly [type: string]: readonly string[] } = {
   TermRefuse: ["termId"],
   TermAdd: ["definition", "required"],
   DealDecline: ["reason"],
-  TermApproval: ["decision", "reopen"],
+  TermApproval: ["decision", "reopen", "agreementHash"],
   TermAgreementDraft: ["agreement"],
 };
 
@@ -1364,7 +1372,7 @@ export function decodeTermMessage(input: unknown): TermDecodeResult {
       return { ok: true, message: typeof note === "string" ? { ...message, note } : message };
     }
     case "TermAccept": {
-      const message: TermAcceptMessage = { ...envelope, type: "TermAccept", termId, valueHash: valueHashVerification };
+      const message: TermAcceptMessage = { ...envelope, type: "TermAccept", termId, valueHash: looseText(raw, "valueHash") };
       return { ok: true, message: raw["value"] === undefined ? message : { ...message, value: jsonOf(raw["value"]) } };
     }
     case "TermDrop":
@@ -1388,7 +1396,9 @@ export function decodeTermMessage(input: unknown): TermDecodeResult {
         return { ok: false, reason: "decision must be approve, reject, or revise" };
       }
       const reopen = looseList(raw["reopen"]);
-      const base: TermApprovalMessage = { ...envelope, type: "TermApproval", decision };
+      const agreementHash = raw["agreementHash"];
+      const plain: TermApprovalMessage = { ...envelope, type: "TermApproval", decision };
+      const base: TermApprovalMessage = typeof agreementHash === "string" ? { ...plain, agreementHash } : plain;
       return {
         ok: true,
         message: reopen === undefined ? base : { ...base, reopen: reopen.filter((item): item is string => typeof item === "string") },

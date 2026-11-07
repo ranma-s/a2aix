@@ -1,5 +1,5 @@
-import { applyTermMessage, coreSheet, decodeTermMessage, openTermSession, webSiteSheet } from "@ix/a2a-ext-negotiation";
-import type { FixedTerm, Party, PresetTerm, TermJson, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
+import { applyChainedTermMessage, coreSheet, decodeTermMessage, expectedPrevHash, openTermSession, presetChainProblem, termHash, termSheetHash, webSiteSheet } from "@ix/a2a-ext-negotiation";
+import type { FixedTerm, Party, PresetTerm, TermJson, TermMessage, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
 import type { JsonObject, JsonValue } from "@ix/distribution";
 import { deferredChecks } from "./deferred.js";
 
@@ -8,6 +8,8 @@ export type TermVerifyReport = {
   readonly issuers: "pass" | "fail";
   readonly replay: "pass" | "fail";
   readonly deadlines: "pass" | "fail";
+  readonly chain: "pass" | "fail";
+  readonly forks: number;
   readonly phase: string;
   readonly messageCount: number;
   readonly terms: readonly FixedTerm[];
@@ -32,7 +34,7 @@ function byId(left: JsonValue, right: JsonValue): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function openFromJob(body: JsonObject, jobId: string): TermSession | string {
+async function openFromJob(body: JsonObject, jobId: string): Promise<TermSession | string> {
   const job = body["job"];
   if (!isObject(job) || text(job, "jobId") !== jobId) {
     return "the job record does not name this job";
@@ -56,27 +58,34 @@ function openFromJob(body: JsonObject, jobId: string): TermSession | string {
     const value: TermJson = entry["value"];
     entries.push({ termId, value });
   }
-  const opened = openTermSession({ jobId, sheet, sheetSha256, preset: entries, roundLimitPerTerm: roundLimit });
+  if (sheetSha256 !== (await termSheetHash(sheet))) {
+    return "the job's sheetSha256 does not match the term sheet";
+  }
+  const presetProblem = await presetChainProblem(entries);
+  if (presetProblem !== undefined) {
+    return presetProblem;
+  }
+  const opened = openTermSession({ jobId, sheet, sheetSha256, preset: entries, roundLimitPerTerm: roundLimit, anchorHash: await termHash(job) });
   return opened.ok ? opened.session : opened.reason;
 }
 
-export function verifyTermTranscript(input: {
+export async function verifyTermTranscript(input: {
   readonly jobId: string;
   readonly events: readonly JsonValue[];
   readonly issuers: { readonly client: string; readonly worker: string };
   readonly signature: string;
   readonly jws: string;
-  readonly prevHash: string;
-  readonly jcsBody: JsonValue;
-}): TermVerifyReport {
-  const deferred = deferredChecks({ signature: input.signature, jws: input.jws, prevHash: input.prevHash, jcsBody: input.jcsBody });
+}): Promise<TermVerifyReport> {
+  const deferred = deferredChecks({ signature: input.signature, jws: input.jws });
   const problems: string[] = [];
   let schema: "pass" | "fail" = "pass";
   let issuers: "pass" | "fail" = "pass";
   let replay: "pass" | "fail" = "pass";
   let deadlines: "pass" | "fail" = "pass";
+  let chain: "pass" | "fail" = "pass";
   let session: TermSession | undefined;
   let count = 0;
+  const pending: { readonly label: string; readonly message: TermMessage; readonly createdAt: string }[] = [];
   for (const event of input.events.slice().sort(byId)) {
     if (!isObject(event) || !isObject(event["body"])) {
       schema = "fail";
@@ -97,7 +106,7 @@ export function verifyTermTranscript(input: {
         problems.push("a second job record");
         continue;
       }
-      const opened = openFromJob(body, input.jobId);
+      const opened = await openFromJob(body, input.jobId);
       if (typeof opened === "string") {
         replay = "fail";
         problems.push(opened);
@@ -132,13 +141,61 @@ export function verifyTermTranscript(input: {
       problems.push(`message ${String(count)}: before the job`);
       continue;
     }
-    const applied = applyTermMessage(session, decoded.message, { now: () => createdAt });
+    pending.push({ label: `message ${String(count)}`, message: decoded.message, createdAt });
+  }
+  const states = new Map<string, { readonly session: TermSession; readonly senders: Set<Party> }>();
+  for (let linked = 0; session !== undefined && linked <= count; linked += 1) {
+    const current: TermSession = session;
+    const expected = await expectedPrevHash(current);
+    const index = pending.findIndex((entry) => entry.message.prevHash === expected);
+    const next = pending[index];
+    if (next === undefined) {
+      break;
+    }
+    pending.splice(index, 1);
+    const state = states.get(expected) ?? { session: current, senders: new Set<Party>() };
+    state.senders.add(next.message.from);
+    states.set(expected, state);
+    const applied = await applyChainedTermMessage(current, next.message, { now: () => next.createdAt });
     if (!applied.ok) {
+      if (applied.chain) {
+        chain = "fail";
+      }
       replay = "fail";
-      problems.push(`message ${String(count)}: ${applied.reason}`);
+      problems.push(`${next.label}: ${applied.reason}`);
       continue;
     }
     session = applied.session;
+  }
+  if (session !== undefined) {
+    const last = await expectedPrevHash(session);
+    states.set(last, states.get(last) ?? { session, senders: new Set<Party>() });
+  }
+  let forks = 0;
+  let broken = 0;
+  for (const entry of pending) {
+    const state = states.get(entry.message.prevHash);
+    if (state === undefined) {
+      broken += 1;
+      continue;
+    }
+    if (state.senders.has(entry.message.from)) {
+      chain = "fail";
+      problems.push(`${entry.label}: ${entry.message.from} sent two messages after the same message`);
+      continue;
+    }
+    state.senders.add(entry.message.from);
+    const checked = await applyChainedTermMessage(state.session, entry.message, { now: () => entry.createdAt });
+    if (!checked.ok) {
+      chain = "fail";
+      problems.push(`${entry.label}: a fork that is not a valid move: ${checked.reason}`);
+      continue;
+    }
+    forks += 1;
+  }
+  if (broken > 0) {
+    chain = "fail";
+    problems.push(`${String(broken)} message(s) point to nothing in the hash chain`);
   }
   if (session === undefined) {
     replay = "fail";
@@ -149,6 +206,8 @@ export function verifyTermTranscript(input: {
     issuers,
     replay,
     deadlines,
+    chain,
+    forks,
     phase: session?.phase ?? "",
     messageCount: count,
     terms: session?.draft?.terms ?? [],

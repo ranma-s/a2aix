@@ -1,4 +1,17 @@
-import { applyTermMessage, coreSheet, decodeTermMessage, openTermSession, sameTermValue, webSiteSheet } from "@ix/a2a-ext-negotiation";
+import {
+  applyChainedTermMessage,
+  chainedHashes,
+  coreSheet,
+  decodeTermMessage,
+  expectedPrevHash,
+  openTermSession,
+  presetChainProblem,
+  sameTermValue,
+  sealTermMessage,
+  termHash,
+  termSheetHash,
+  webSiteSheet,
+} from "@ix/a2a-ext-negotiation";
 import type { Clock, Party, PresetTerm, TermJson, TermMessage, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
 import type { JsonObject, JsonValue, StoredEvent } from "@ix/distribution";
 import type { JobBoard } from "./board.js";
@@ -49,6 +62,7 @@ type Side = {
   jobExpiresAt: string | undefined;
   session: TermSession | undefined;
   readonly applied: Set<string>;
+  readonly pending: { readonly id: string; readonly message: TermMessage }[];
   readonly refusals: string[];
   readonly escalations: TermTrialEscalation[];
   readonly shownFreeText: string[];
@@ -134,10 +148,21 @@ function readTermJob(body: JsonValue): TermJob | undefined {
   return { jobId, sheetId, sheetVersion, sheetSha256, preset: entries, roundLimitPerTerm, description, expiresAt };
 }
 
-function openFor(job: TermJob): TermSession | string {
+export function termJobAnchor(job: TermJob): Promise<string> {
+  return termHash(jobBody(job)["job"]);
+}
+
+async function openFor(job: TermJob): Promise<TermSession | string> {
   const sheet = findTermSheet(job.sheetId, job.sheetVersion);
   if (sheet === undefined) {
     return `unknown term sheet ${job.sheetId}/${String(job.sheetVersion)}`;
+  }
+  if (job.sheetSha256 !== (await termSheetHash(sheet))) {
+    return "the job's sheetSha256 does not match the term sheet";
+  }
+  const presetProblem = await presetChainProblem(job.preset);
+  if (presetProblem !== undefined) {
+    return presetProblem;
   }
   const opened = openTermSession({
     jobId: job.jobId,
@@ -145,6 +170,7 @@ function openFor(job: TermJob): TermSession | string {
     sheetSha256: job.sheetSha256,
     preset: job.preset,
     roundLimitPerTerm: job.roundLimitPerTerm,
+    anchorHash: await termJobAnchor(job),
   });
   return opened.ok ? opened.session : opened.reason;
 }
@@ -221,7 +247,7 @@ async function sync(side: Side, board: JobBoard, jobId: string, clock: Clock): P
     }
     side.applied.add(event.id);
     if (event.kind === jobKind) {
-      acceptJob(side, event);
+      await acceptJob(side, event);
       continue;
     }
     if (event.kind !== negotiationKind) {
@@ -245,15 +271,45 @@ async function sync(side: Side, board: JobBoard, jobId: string, clock: Clock): P
       side.refusals.push(`${event.id}: issuer does not match the sending party`);
       continue;
     }
-    const applied = applyTermMessage(side.session, decoded.message, clock);
+    side.pending.push({ id: event.id, message: decoded.message });
+  }
+  await drainPending(side, clock);
+}
+
+async function drainPending(side: Side, clock: Clock): Promise<void> {
+  for (let guard = side.pending.length; guard >= 0 && side.session !== undefined; guard -= 1) {
+    const session = side.session;
+    const expected = await expectedPrevHash(session);
+    const index = side.pending.findIndex((entry) => entry.message.prevHash === expected);
+    const next = side.pending[index];
+    if (next === undefined) {
+      break;
+    }
+    side.pending.splice(index, 1);
+    const applied = await applyChainedTermMessage(session, next.message, clock);
     if (!applied.ok) {
-      side.refusals.push(`${event.id}: ${applied.reason}`);
+      side.refusals.push(`${next.id}: ${applied.reason}`);
       continue;
     }
     side.session = applied.session;
-    const note = noteOf(decoded.message);
-    if (decoded.message.from !== side.party && note !== undefined) {
+    const note = noteOf(next.message);
+    if (next.message.from !== side.party && note !== undefined) {
       side.shownFreeText.push(redactFreeText(note));
+    }
+  }
+  await dropForks(side);
+}
+
+async function dropForks(side: Side): Promise<void> {
+  if (side.session === undefined || side.pending.length === 0) {
+    return;
+  }
+  const behind = new Set((await chainedHashes(side.session)).slice(0, -1));
+  for (let index = side.pending.length - 1; index >= 0; index -= 1) {
+    const entry = side.pending[index];
+    if (entry !== undefined && behind.has(entry.message.prevHash)) {
+      side.pending.splice(index, 1);
+      side.refusals.push(`${entry.id}: a fork; another message already continued the hash chain from the same message`);
     }
   }
 }
@@ -275,7 +331,7 @@ function sameJob(left: TermJob, right: TermJob): boolean {
   );
 }
 
-function acceptJob(side: Side, event: StoredEvent): void {
+async function acceptJob(side: Side, event: StoredEvent): Promise<void> {
   if (side.stopped) {
     return;
   }
@@ -306,7 +362,7 @@ function acceptJob(side: Side, event: StoredEvent): void {
     side.stopped = true;
     return;
   }
-  const opened = openFor(job);
+  const opened = await openFor(job);
   if (typeof opened === "string") {
     side.refusals.push(`${event.id}: ${opened}`);
     side.stopped = true;
@@ -350,14 +406,15 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
   if (turn?.message === undefined) {
     return false;
   }
+  const sealed = await sealTermMessage(side.session, turn.message);
   const failure = await publish({
     board,
     clock,
     issuer: side.issuer,
     jobId,
     kind: negotiationKind,
-    expiresAt: turn.message.expiresAt,
-    body: { record: termRecord, extensionsHeader: mockExtensionsHeader, message: toJson(turn.message) },
+    expiresAt: sealed.expiresAt,
+    body: { record: termRecord, extensionsHeader: mockExtensionsHeader, message: toJson(sealed) },
     ...(side.jobExpiresAt === undefined ? {} : { notAfter: side.jobExpiresAt }),
   });
   if (failure !== undefined) {
@@ -379,6 +436,7 @@ function newSide(party: Party, config: TermAgentConfig, jobId: string, postedJob
     jobExpiresAt: undefined,
     session: undefined,
     applied: new Set<string>(),
+    pending: [],
     refusals: [],
     escalations: [],
     shownFreeText: [],

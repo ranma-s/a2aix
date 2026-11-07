@@ -5,7 +5,7 @@ export const sampleTermJob: TermJob = {
   jobId: "job-term-0001",
   sheetId: "ix:sheet/web-site",
   sheetVersion: 1,
-  sheetSha256: "unverified",
+  sheetSha256: "1ef12f30693ddfc3f6f4eb9f48a87a95aee08aeabf39ae6b8c714a0cda80c67a",
   preset: [{ termId: "web:responsive", value: true }],
   roundLimitPerTerm: 3,
   description: "小さな会社のコーポレートサイト。5ページ、スマートフォン対応。",

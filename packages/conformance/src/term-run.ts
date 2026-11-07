@@ -15,6 +15,7 @@ import {
   sampleTermJob,
   sampleTermWorkerMandate,
   termInjectionCases,
+  termJobAnchor,
   withinLimit,
   workerIssuer,
 } from "@ix/agents";
@@ -145,17 +146,22 @@ function agreedInsideBoth(report: TermRelayReport): boolean {
   );
 }
 
-function replayPasses(report: TermRelayReport): boolean {
-  const verified = verifyTermTranscript({
+async function replayPasses(report: TermRelayReport): Promise<boolean> {
+  const verified = await verifyTermTranscript({
     jobId: report.poster.session?.jobId ?? sampleTermJob.jobId,
     events: report.events.map((event) => toJson(event)),
     issuers: { client: posterIssuer, worker: workerIssuer },
     signature: "unverified",
     jws: "unverified",
-    prevHash: "unverified",
-    jcsBody: null,
   });
-  return verified.schema === "pass" && verified.issuers === "pass" && verified.replay === "pass" && verified.deadlines === "pass";
+  return (
+    verified.schema === "pass" &&
+    verified.issuers === "pass" &&
+    verified.replay === "pass" &&
+    verified.deadlines === "pass" &&
+    verified.chain === "pass" &&
+    verified.phase === "agreed"
+  );
 }
 
 const envelope = {
@@ -202,7 +208,7 @@ export async function proveTermMessages(openBoard: OpenTermBoard): Promise<TermM
     handAccepted: hand.ok,
     sawTermJob,
     sameDraftBothSides: sameDraft(report),
-    independentReplay: replayPasses(report),
+    independentReplay: await replayPasses(report),
   };
 }
 
@@ -257,6 +263,8 @@ function countMessages(report: TermRelayReport): number {
 }
 
 async function publishAs(board: JobBoard, id: string, issuer: string, message: TermJson): Promise<void> {
+  const anchor = await termJobAnchor(sampleTermJob);
+  const chained = isObject(message) ? { ...message, prevHash: anchor } : message;
   const answer = await board.publish({
     id,
     issuer,
@@ -264,7 +272,7 @@ async function publishAs(board: JobBoard, id: string, issuer: string, message: T
     tags: [[jobTag, sampleTermJob.jobId]],
     createdAt: termNow,
     expiresAt: "2026-11-05T00:00:00.000Z",
-    body: { record: "term", extensionsHeader: mockExtensionsHeader, message: toJson(message) },
+    body: { record: "term", extensionsHeader: mockExtensionsHeader, message: toJson(chained) },
     sig: "unverified",
   });
   if (!answer.ok) {
@@ -280,6 +288,15 @@ function tickingClock(start: string, stepMs: number): { readonly now: () => stri
       return new Date(at).toISOString();
     },
   };
+}
+
+function expiredMessageKeptOut(report: TermRelayReport): boolean {
+  const sides = [report.poster, report.worker];
+  const inHistory = sides.some((side) =>
+    (side.session?.transcript ?? []).some((message) => message.type === "TermPropose" && sameTermValue(message.value, { amount: 1, currency: "JPY", taxIncluded: true })),
+  );
+  const refused = sides.some((side) => side.refusals.some((reason) => reason.includes("expired")));
+  return !inHistory && refused;
 }
 
 async function workerReadsJobAt(openBoard: OpenTermBoard, job: TermJob, workerNow: string): Promise<boolean> {
@@ -338,7 +355,7 @@ export async function proveTermDeadline(openBoard: OpenTermBoard): Promise<TermD
       midwayLate.length === 0 &&
       midwayStopped &&
       countMessages(midway) > 0,
-    expiredMessageRefused: expired.poster.refusals.some((reason) => reason.includes("expired")) && agreedInsideBoth(expired),
+    expiredMessageRefused: expiredMessageKeptOut(expired) && agreedInsideBoth(expired),
   };
 }
 
@@ -427,7 +444,7 @@ async function observe(openBoard: OpenTermBoard, entry: TermInjectionCase): Prom
   switch (entry.place) {
     case "description": {
       const report = await run(openBoard, { job: { ...sampleTermJob, description: entry.text } });
-      if (!agreedInsideBoth(report) || !replayPasses(report)) {
+      if (!agreedInsideBoth(report) || !(await replayPasses(report))) {
         return fail("the agreement left a mandate or the replay failed");
       }
       if (!report.worker.shownFreeText.includes(redactFreeText(entry.text)) || !noContact(report.worker.shownFreeText)) {
@@ -459,7 +476,7 @@ async function observe(openBoard: OpenTermBoard, entry: TermInjectionCase): Prom
       if (extra !== undefined) {
         return fail(extra);
       }
-      if (!agreedInsideBoth(report) || !replayPasses(report) || approvals !== 2 || !currencyKept) {
+      if (!agreedInsideBoth(report) || !(await replayPasses(report)) || approvals !== 2 || !currencyKept) {
         return fail("the note changed the agreement, skipped approval, or changed the currency");
       }
       if ([...issuers].some((value) => value !== posterIssuer && value !== workerIssuer)) {
@@ -504,7 +521,7 @@ async function observe(openBoard: OpenTermBoard, entry: TermInjectionCase): Prom
             note: entry.text,
           }),
       });
-      return report.poster.refusals.some((reason) => reason.includes("expired")) && agreedInsideBoth(report)
+      return expiredMessageKeptOut(report) && agreedInsideBoth(report)
         ? pass("the expired message was refused and the agreement stayed inside both mandates")
         : fail("the expired message was not refused");
     }
