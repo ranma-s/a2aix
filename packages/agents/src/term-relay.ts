@@ -283,7 +283,7 @@ async function drainPending(side: Side, clock: Clock): Promise<void> {
     const index = side.pending.findIndex((entry) => entry.message.prevHash === expected);
     const next = side.pending[index];
     if (next === undefined) {
-      return;
+      break;
     }
     side.pending.splice(index, 1);
     const applied = await applyChainedTermMessage(session, next.message, clock);

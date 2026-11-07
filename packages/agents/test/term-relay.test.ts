@@ -107,6 +107,31 @@ describe("term negotiation over the relay", () => {
     expect(result.poster.session?.phase).toBe("agreed");
   });
 
+  it("records a second message after the same message as a fork and does not apply it", async () => {
+    const board = createTestBoard(clock);
+    const poster = createTermSide({ board, clock, jobId: job.jobId, config: { party: "client", mandate: clientMandate, human: "approve" }, postJob: job });
+    const worker = createTermSide({ board, clock, jobId: job.jobId, config: { party: "worker", mandate: workerMandate, human: "approve" } });
+    for (let turn = 0; turn < 3; turn += 1) {
+      await poster.step();
+      await worker.step();
+    }
+    const listed = await board.query({ tags: [{ name: jobTag, values: [job.jobId] }] });
+    const first = listed.ok ? listed.events.find((event) => event.kind === negotiationKind && event.issuer === workerIssuer) : undefined;
+    if (first === undefined) {
+      throw new Error("the worker published nothing");
+    }
+    await poster.sync();
+    await worker.sync();
+    const before = poster.report().session?.transcript.length;
+    const answer = await board.publish({ ...first, id: "zz-fork" });
+    expect(answer.ok).toBe(true);
+    await poster.sync();
+    await worker.sync();
+    expect(poster.report().refusals.some((reason) => reason.startsWith("zz-fork: a fork"))).toBe(true);
+    expect(worker.report().refusals.some((reason) => reason.startsWith("zz-fork: a fork"))).toBe(true);
+    expect(poster.report().session?.transcript.length).toBe(before);
+  });
+
   it("refuses a negotiation message that arrives before the job", async () => {
     const board = createTestBoard(clock);
     await board.publish({
