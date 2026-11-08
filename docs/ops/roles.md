@@ -32,3 +32,5 @@ Verifier (fresh session, a different session from the implementer):
 > You did not write PR #{n}. Read docs/handoff.md, AGENTS.md, and docs/ops/checklist.md. Run `pnpm install --frozen-lockfile && pnpm check`, then `node scripts/verify-ix-node.mjs doctor`, `drive`, and `cleanup`. Try to break what the PR claims, using the checklist. Do not commit or push. Leave the tree clean. Post exactly one comment on PR #{n} with `gh api repos/ranma-s/a2aix/issues/{n}/comments -F body=@file`, in plain Japanese: the verdict (問題なし / 要修正), each finding with a reproduction, and what you ran. Be concise.
 
 Token note: each session reports nothing about its own usage. Whoever started it reads `get_session` usage afterwards and adds it to the PR.
+
+Permissions: `.claude/settings.json` lets sessions call create_session, get_session, send_message, add_repo, and register_repo_root without a prompt (D08). Nothing else is pre-approved. A run that stops on a prompt waits for the director to approve it from the phone.
