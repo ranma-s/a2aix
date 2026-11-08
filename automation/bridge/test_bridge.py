@@ -95,7 +95,7 @@ class BridgeTests(unittest.TestCase):
             invoke_ollama=fake.ollama,
         )
 
-    def test_argv_is_the_pro_oauth_list(self):
+    def test_argv_is_the_fixed_list(self):
         self.assertEqual(self.bridge.claude_argv(), ARGV)
         self.assertEqual(self.bridge.WALL_TIMEOUT_S, 900)
         source = Path(os.environ["IX_BRIDGE_PY"]).read_text()
@@ -103,6 +103,9 @@ class BridgeTests(unittest.TestCase):
         self.assertNotIn("--bare", source)
         self.assertNotIn("max-turns", source)
         self.assertNotIn("dangerously-skip-permissions", source)
+        self.assertNotIn("os.system", source)
+        self.assertIn("start_new_session=True", source)
+        self.assertIn("127.0.0.1:11434", source)
 
     def test_claude_bin_comes_from_the_environment(self):
         os.environ["IX_CLAUDE_BIN"] = "/opt/example/claude"
@@ -111,9 +114,14 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.bridge.claude_argv(), ARGV)
         source = Path(os.environ["IX_BRIDGE_PY"]).read_text()
         self.assertNotIn("/home/", source)
-        self.assertNotIn("os.system", source)
-        self.assertIn("start_new_session=True", source)
-        self.assertIn("127.0.0.1:11434", source)
+
+    def test_result_does_not_record_the_claude_bin(self):
+        os.environ["IX_CLAUDE_BIN"] = "/home/alice/.local/bin/claude"
+        outcome = self.execute()
+        self.assertEqual(outcome["status"], "review-needed")
+        self.assertEqual(outcome["claude"]["argv"], ARGV)
+        self.assertNotIn("/home/", json.dumps(outcome))
+        self.assertNotIn("/home/", (self.out / "bridge-result.json").read_text())
 
     def test_sample_ticket_is_review_needed_not_gated(self):
         outcome = self.execute()

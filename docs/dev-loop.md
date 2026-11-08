@@ -59,7 +59,7 @@ node scripts/ix-job.mjs gate \
 
 Claude Code CLI が入っていて、サインイン済みの機械で動かす。CLI は 2.1.311 以上で、`claude auth status` が終了 0 になること。資格情報のコピーも、API 課金の設定もこのリポジトリには置かない。
 
-`automation/bridge/ix_bridge.py` は、人が起動したときだけ、Claude CLI を次の引数で一度呼ぶ。CLI の場所は環境変数 `IX_CLAUDE_BIN` で指定する。空か未設定なら `claude` を PATH から探す。引数は場所によらず同じである。`--bare`、`--max-turns`、`--dangerously-skip-permissions` は使わない。ツールは空、`--safe-mode`、`--strict-mcp-config`、`--no-session-persistence`、`--permission-prompts none` である。標準エラーは保存しない。続けて `http://127.0.0.1:11434/api/generate` の `qwen2.5-coder:14b` にレビュー文を送る。票が URL やモデル名を差し替えることはできない。モデルの文章はファイルにするだけで、実行しない。
+`automation/bridge/ix_bridge.py` は、人が起動したときだけ、Claude CLI を次の引数で一度呼ぶ。CLI の場所は環境変数 `IX_CLAUDE_BIN` で指定する。空か未設定なら `claude` を PATH から探す。引数は場所によらず同じである。PATH の先頭に偽の `claude` があればそれが動くので、起動する人は PATH を確かめるか `IX_CLAUDE_BIN` に絶対パスを書く。結果の `claude.argv` の先頭は、設定によらず `claude` と書き、場所は残さない。`--bare`、`--max-turns`、`--dangerously-skip-permissions` は使わない。ツールは空、`--safe-mode`、`--strict-mcp-config`、`--no-session-persistence`、`--permission-prompts none` である。標準エラーは保存しない。続けて `http://127.0.0.1:11434/api/generate` の `qwen2.5-coder:14b` にレビュー文を送る。票が URL やモデル名を差し替えることはできない。モデルの文章はファイルにするだけで、実行しない。
 
 橋の約束は次のとおりである。
 

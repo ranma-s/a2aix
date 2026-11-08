@@ -63,6 +63,10 @@ def claude_bin() -> str:
     return value if value else DEFAULT_CLAUDE_BIN
 
 
+def recorded_claude_argv() -> list[str]:
+    return [DEFAULT_CLAUDE_BIN, *claude_argv()[1:]]
+
+
 def claude_argv() -> list[str]:
     return [
         claude_bin(),
@@ -349,7 +353,7 @@ def _run_locked(req, request_sha, prompt_text, limit, out_dir, state_dir,
         return _result("rejected", "over-limit", request_sha, called)
 
     claude_info = {
-        "argv": claude_argv(),
+        "argv": recorded_claude_argv(),
         "promptSha256": req["promptSha256"],
         "outputSha256": _sha256(candidate_bytes),
         "returncode": returncode,
