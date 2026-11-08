@@ -58,6 +58,7 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm test
       - run: pnpm job:check
+      - run: pnpm bridge:check
 
   conformance:
     name: conformance

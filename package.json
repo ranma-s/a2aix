@@ -15,7 +15,8 @@
     "test": "vitest run",
     "conformance": "vitest run --config vitest.conformance.config.ts",
     "job:check": "node --test scripts/ix-job.test.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm guardrails && pnpm test && pnpm conformance && pnpm job:check",
+    "bridge:check": "python3 -m unittest discover -s automation/bridge -p 'test_*.py'",
+    "check": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm guardrails && pnpm test && pnpm conformance && pnpm job:check && pnpm bridge:check",
     "verify": "node scripts/verify-ix-node.mjs drive"
   },
   "devDependencies": {
