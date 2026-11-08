@@ -35,6 +35,7 @@ export type TermMessageEvidence = {
   readonly sawTermJob: boolean;
   readonly sameDraftBothSides: boolean;
   readonly independentReplay: boolean;
+  readonly agentSignedApprovalRefused: boolean;
 };
 
 export type TermMandateEvidence = {
@@ -170,6 +171,7 @@ async function replayPasses(report: TermRelayReport): Promise<boolean> {
     jobId: report.poster.session?.jobId ?? sampleTermJob.jobId,
     events: report.events.map((event) => toJson(event)),
     issuers: report.peers,
+    approvers: report.peers.approvers,
     profile: termRelayProfile,
   });
   return (
@@ -228,7 +230,44 @@ export async function proveTermMessages(openBoard: OpenTermBoard): Promise<TermM
     sawTermJob,
     sameDraftBothSides: sameDraft(report),
     independentReplay: await replayPasses(report),
+    agentSignedApprovalRefused: await agentSignedApprovalRefused(openBoard),
   };
+}
+
+function approvalByAgentBoard(board: JobBoard, signer: EphemeralSigner): JobBoard {
+  return {
+    async publish(input: RelayEventInput) {
+      const body = input.body;
+      const message = isObject(body) ? body["message"] : undefined;
+      if (input.issuer !== signer.did || !isObject(body) || !isObject(message) || message["type"] !== "TermApproval") {
+        return board.publish(input);
+      }
+      const byAgent = await signedMessage(message, signer);
+      return board.publish(
+        await signedEvent({ id: input.id, kind: input.kind, tags: input.tags, createdAt: input.createdAt, expiresAt: input.expiresAt, body: { ...body, message: byAgent } }, signer),
+      );
+    },
+    query: (filter) => board.query(filter),
+    subscribe: (filter, listener) => board.subscribe(filter, listener),
+  };
+}
+
+async function agentSignedApprovalRefused(openBoard: OpenTermBoard): Promise<boolean> {
+  const report = await run(openBoard, { wrap: (board, signers) => approvalByAgentBoard(board, signers.worker) });
+  const verified = await verifyTermTranscript({
+    jobId: sampleTermJob.jobId,
+    events: report.events.map((event) => toJson(event)),
+    issuers: report.peers,
+    approvers: report.peers.approvers,
+    profile: termRelayProfile,
+  });
+  return (
+    report.poster.session?.phase !== "agreed" &&
+    report.worker.session?.phase !== "agreed" &&
+    report.poster.refusals.some((reason) => reason.includes("message signature")) &&
+    verified.signatures === "fail" &&
+    verified.phase !== "agreed"
+  );
 }
 
 function priceOf(message: TermMessage): number | undefined {
@@ -324,9 +363,9 @@ async function workerReadsJobAt(openBoard: OpenTermBoard, job: TermJob, workerNo
   const board = openBoard(termNow);
   const signers = await createTermSigners();
   const peers = peersOf(signers);
-  const poster = createTermSide({ board, clock: clockAt(termNow), jobId: job.jobId, config: { party: "client", mandate: sampleTermClientMandate, human: "approve" }, signer: signers.client, peers, postJob: job });
+  const poster = createTermSide({ board, clock: clockAt(termNow), jobId: job.jobId, config: { party: "client", mandate: sampleTermClientMandate, human: "approve" }, signer: signers.client, approver: signers.approvers.client, peers, postJob: job });
   await poster.step();
-  const worker = createTermSide({ board, clock: clockAt(workerNow), jobId: job.jobId, config: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" }, signer: signers.worker, peers });
+  const worker = createTermSide({ board, clock: clockAt(workerNow), jobId: job.jobId, config: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" }, signer: signers.worker, approver: signers.approvers.worker, peers });
   for (let index = 0; index < 3; index += 1) {
     await worker.step();
   }

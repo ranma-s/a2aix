@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { decodeTermMessage, signatureVerification } from "@ix/a2a-ext-negotiation";
 import type { TermJson } from "@ix/a2a-ext-negotiation";
-import type { RelayEventInput } from "@ix/distribution";
+import type { JsonValue, RelayEventInput } from "@ix/distribution";
 import type { EphemeralSigner } from "@ix/identity";
 import { eventSigningInput } from "@ix/protocol-core";
 import { clockAt, createTermSide, createTermSigners, jobKind, jobTag, mockExtensionsHeader, negotiationKind, peersOf, runTermRelay, signTermMessage, termJobAnchor } from "../src/index.js";
-import type { TermSigners } from "../src/index.js";
+import type { JobBoard, TermSigners } from "../src/index.js";
 import type { TermJob, TermMandate } from "../src/index.js";
 import { createTestBoard } from "./board.js";
 
@@ -85,6 +85,25 @@ async function anchoredProposal(signer: EphemeralSigner, from: "client" | "worke
   return signTermMessage(decoded.message, signer);
 }
 
+function isRecord(value: JsonValue | undefined): value is { readonly [key: string]: JsonValue } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resignWorkerApproval(board: JobBoard, signers: TermSigners, wrong: EphemeralSigner): JobBoard {
+  return {
+    ...board,
+    async publish(input) {
+      const body = input.body;
+      const decoded = isRecord(body) ? decodeTermMessage(body["message"]) : undefined;
+      if (!isRecord(body) || decoded?.ok !== true || decoded.message.type !== "TermApproval" || decoded.message.from !== "worker") {
+        return board.publish(input);
+      }
+      const fields = { id: input.id, kind: input.kind, tags: input.tags, createdAt: input.createdAt, expiresAt: input.expiresAt };
+      return board.publish(await signedEvent(signers.worker, { ...fields, body: { ...body, message: await signTermMessage(decoded.message, wrong) } }));
+    },
+  };
+}
+
 describe("term negotiation over the relay", () => {
   it("reaches the same agreement on both sides from the relay's events", async () => {
     const result = await run();
@@ -95,6 +114,32 @@ describe("term negotiation over the relay", () => {
     expect(result.worker.session?.draft).toEqual(result.poster.session?.draft);
     expect(result.events.length).toBeGreaterThan(10);
     expect(result.events.every((event) => event.tags.some(([name, value]) => name === jobTag && value === job.jobId))).toBe(true);
+  });
+
+  it("signs each human approval with that party's approver key, and refuses an approval signed by any other key", async () => {
+    const signers = await createTermSigners();
+    const good = await run(createTestBoard(clock), { signers });
+    const approvals = good.events.filter((event) => isRecord(event.body) && isRecord(event.body["message"]) && event.body["message"]["type"] === "TermApproval");
+    expect(approvals.map((event) => event.issuer).sort()).toEqual([signers.client.did, signers.worker.did].sort());
+    const outsider = (await createTermSigners()).worker;
+    for (const wrong of [signers.worker, signers.approvers.client, outsider]) {
+      const result = await run(resignWorkerApproval(createTestBoard(clock), signers, wrong), { signers });
+      expect(result.poster.session?.phase).not.toBe("agreed");
+      expect(result.worker.session?.phase).not.toBe("agreed");
+      expect(result.poster.refusals.some((reason) => reason.includes("message signature"))).toBe(true);
+    }
+  });
+
+  it("refuses peers where a party's approver is its own agent key or another party's key", async () => {
+    const signers = await createTermSigners();
+    const peers = peersOf(signers);
+    const config = { party: "worker", mandate: workerMandate, human: "approve" } as const;
+    const side = (approver: EphemeralSigner, named: typeof peers) => () => createTermSide({ board: createTestBoard(clock), clock, jobId: job.jobId, config, signer: signers.worker, approver, peers: named });
+    expect(side(signers.approvers.worker, peers)).not.toThrow();
+    expect(side(signers.worker, { ...peers, approvers: { ...peers.approvers, worker: signers.worker.did } })).toThrow(/worker approver did:key is the worker agent did:key/);
+    expect(side(signers.approvers.worker, { ...peers, approvers: { ...peers.approvers, client: signers.worker.did } })).toThrow(/not all different/);
+    expect(side(signers.approvers.client, peers)).toThrow(/approver is not the worker approver/);
+    await expect(run(createTestBoard(clock), { signers: { ...signers, approvers: { ...signers.approvers, client: signers.client } } })).rejects.toThrow(/client approver did:key is the client agent did:key/);
   });
 
   it("shows the job description to the worker's human only after removing contacts", async () => {
@@ -158,8 +203,8 @@ describe("term negotiation over the relay", () => {
     const board = createTestBoard(clock);
     const signers = await createTermSigners();
     const peers = peersOf(signers);
-    const poster = createTermSide({ board, clock, jobId: job.jobId, config: { party: "client", mandate: clientMandate, human: "approve" }, signer: signers.client, peers, postJob: job });
-    const worker = createTermSide({ board, clock, jobId: job.jobId, config: { party: "worker", mandate: workerMandate, human: "approve" }, signer: signers.worker, peers });
+    const poster = createTermSide({ board, clock, jobId: job.jobId, config: { party: "client", mandate: clientMandate, human: "approve" }, signer: signers.client, approver: signers.approvers.client, peers, postJob: job });
+    const worker = createTermSide({ board, clock, jobId: job.jobId, config: { party: "worker", mandate: workerMandate, human: "approve" }, signer: signers.worker, approver: signers.approvers.worker, peers });
     for (let turn = 0; turn < 3; turn += 1) {
       await poster.step();
       await worker.step();
@@ -325,9 +370,9 @@ describe("term negotiation over the relay", () => {
       const board = createTestBoard(clock);
       const signers = await createTermSigners();
       const peers = peersOf(signers);
-      const poster = createTermSide({ board, clock, jobId: job.jobId, config: { party: "client", mandate: clientMandate, human: "approve" }, signer: signers.client, peers, postJob: job });
+      const poster = createTermSide({ board, clock, jobId: job.jobId, config: { party: "client", mandate: clientMandate, human: "approve" }, signer: signers.client, approver: signers.approvers.client, peers, postJob: job });
       await poster.step();
-      const worker = createTermSide({ board, clock: clockAt(workerNow), jobId: job.jobId, config: { party: "worker", mandate: workerMandate, human: "approve" }, signer: signers.worker, peers });
+      const worker = createTermSide({ board, clock: clockAt(workerNow), jobId: job.jobId, config: { party: "worker", mandate: workerMandate, human: "approve" }, signer: signers.worker, approver: signers.approvers.worker, peers });
       await worker.step();
       await worker.step();
       expect(worker.report().refusals.some((reason) => reason.includes("the job has expired"))).toBe(true);

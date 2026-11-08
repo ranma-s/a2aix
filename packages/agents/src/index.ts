@@ -18,8 +18,8 @@ export type {
   TermTrialInput,
   TermTrialResult,
 } from "./terms.js";
-export { createTermSide, createTermSigner, createTermSigners, findTermSheet, knownTermSheets, peersOf, runTermRelay, signTermMessage, termJobAnchor } from "./term-relay.js";
-export type { TermJob, TermPeers, TermRelayReport, TermSideHandle, TermSideReport, TermSigners } from "./term-relay.js";
+export { createTermSide, createTermSigner, createTermSigners, expectedSignerOf, findTermSheet, knownTermSheets, peersOf, peersProblem, runTermRelay, signTermMessage, termJobAnchor } from "./term-relay.js";
+export type { TermJob, TermParties, TermPeers, TermRelayReport, TermSideHandle, TermSideReport, TermSigners } from "./term-relay.js";
 export { sampleTermClientMandate, sampleTermJob, sampleTermWorkerMandate } from "./sample-terms.js";
 export { termInjectionCases } from "./term-injection.js";
 export type { TermInjectionCase, TermInjectionPlace } from "./term-injection.js";

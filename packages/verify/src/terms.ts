@@ -72,6 +72,16 @@ async function messageSignatureProblem(raw: JsonValue | undefined, message: Term
   return checked.ok ? undefined : checked.reason;
 }
 
+function partiesProblem(issuers: { readonly client: string; readonly worker: string }, approvers: { readonly client: string; readonly worker: string }): string | undefined {
+  for (const party of ["client", "worker"] as const) {
+    if (approvers[party] === issuers[party]) {
+      return `the ${party} approver did:key is the ${party} agent did:key`;
+    }
+  }
+  const names = [issuers.client, issuers.worker, approvers.client, approvers.worker];
+  return new Set(names).size === names.length ? undefined : "the agent and approver did:key names of the two parties are not all different";
+}
+
 const verifiableSheets: readonly TermSheet[] = [coreSheet, webSiteSheet];
 
 function isObject(value: JsonValue | undefined): value is JsonObject {
@@ -135,14 +145,19 @@ export async function verifyTermTranscript(input: {
   readonly jobId: string;
   readonly events: readonly JsonValue[];
   readonly issuers: { readonly client: string; readonly worker: string };
+  readonly approvers: { readonly client: string; readonly worker: string };
   readonly profile: TermRelayProfile;
 }): Promise<TermVerifyReport> {
   const problems: string[] = [];
+  const partyProblem = partiesProblem(input.issuers, input.approvers);
   const seen = new Set<string>();
   let duplicates = 0;
   let signatures: "pass" | "fail" = "pass";
   let schema: "pass" | "fail" = "pass";
-  let issuers: "pass" | "fail" = "pass";
+  let issuers: "pass" | "fail" = partyProblem === undefined ? "pass" : "fail";
+  if (partyProblem !== undefined) {
+    problems.push(partyProblem);
+  }
   let replay: "pass" | "fail" = "pass";
   let deadlines: "pass" | "fail" = "pass";
   let chain: "pass" | "fail" = "pass";
@@ -223,7 +238,7 @@ export async function verifyTermTranscript(input: {
       problems.push(`message ${String(count)}: issuer does not match ${from}`);
       continue;
     }
-    const messageProblem = await messageSignatureProblem(body["message"], decoded.message, input.issuers[from]);
+    const messageProblem = await messageSignatureProblem(body["message"], decoded.message, decoded.message.type === "TermApproval" ? input.approvers[from] : input.issuers[from]);
     if (messageProblem !== undefined) {
       signatures = "fail";
       problems.push(`message ${String(count)}: message signature: ${messageProblem}`);
