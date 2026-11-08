@@ -12,5 +12,5 @@ interface IxTextDecoder {
 }
 
 declare const TextDecoder: {
-  new (label: "utf-8", options: { readonly fatal: true }): IxTextDecoder;
+  new (label: "utf-8", options: { readonly fatal: true; readonly ignoreBOM: true }): IxTextDecoder;
 };

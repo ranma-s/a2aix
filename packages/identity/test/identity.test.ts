@@ -6,6 +6,8 @@ import {
   base64UrlEncode,
   didKeyFromEd25519,
   ed25519FromDidKey,
+  isUsableEd25519PublicKey,
+  isWellFormedText,
   keyHandling,
   refuseKeyOperation,
   verifyDetachedJws,
@@ -104,7 +106,7 @@ describe("identity", () => {
       [`${header(`{"alg":"EdDSA","kid":"${sampleDid}","b64":false}`)}..${rfc8037Signature}`, "x", sampleDid, /exactly alg and kid/],
       [`${header(`{"alg":"ES256","kid":"${sampleDid}"}`)}..${rfc8037Signature}`, "x", sampleDid, /alg must be EdDSA/],
       [`${header(`{"alg":"EdDSA","kid":"${sampleDid}","kid":"${sampleDid}"}`)}..${rfc8037Signature}`, "x", sampleDid, /not JSON/],
-      [`${header('{"alg":"EdDSA","kid":"did:web:example.com"}')}..${rfc8037Signature}`, "x", "did:web:example.com", /not an Ed25519 did:key/],
+      [`${header('{"alg":"EdDSA","kid":"did:web:example.com"}')}..${rfc8037Signature}`, "x", "did:web:example.com", /not a usable Ed25519 did:key/],
       [`${sampleJws.split("..")[0] ?? ""}..${rfc8037Signature}=`, samplePayload, sampleDid, /not base64url/],
       [`${sampleJws}.x`, samplePayload, sampleDid, /detached payload/],
     ];
@@ -113,6 +115,46 @@ describe("identity", () => {
       expect(result.ok).toBe(false);
       expect(result.ok ? "" : result.reason).toMatch(reason);
     }
+  });
+
+  it("rejects the small-order and non-canonical public keys that would accept any message", async () => {
+    const identity = new Uint8Array(32);
+    identity[0] = 1;
+    const anySignature = new Uint8Array(64);
+    anySignature[0] = 1;
+    const weak = [
+      identity,
+      new Uint8Array(32),
+      hex("0000000000000000000000000000000000000000000000000000000000000080"),
+      hex("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+      hex("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+      hex("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+      hex("26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"),
+      hex("26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85"),
+      hex("c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"),
+      hex("c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa"),
+      hex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+    ];
+    for (const key of weak) {
+      expect(isUsableEd25519PublicKey(key)).toBe(false);
+      expect(await verifyEd25519(key, anySignature, utf8("forged"))).toBe(false);
+      const did = `did:key:z${base58btcEncode(Uint8Array.from([0xed, 0x01, ...key]))}`;
+      expect(ed25519FromDidKey(did)).toBeUndefined();
+      const jws = `${header(`{"alg":"EdDSA","kid":"${did}"}`)}..${base64UrlEncode(anySignature)}`;
+      const result = await verifyDetachedJws({ jws, payload: "forged", expectedKid: did });
+      expect(result.ok ? "" : result.reason).toMatch(/not a usable Ed25519 did:key/);
+    }
+    expect(isUsableEd25519PublicKey(rfcKey())).toBe(true);
+  });
+
+  it("rejects a payload that is not well-formed text and a header with a byte order mark", async () => {
+    expect(isWellFormedText("x\uD800")).toBe(false);
+    expect(isWellFormedText("\uDC00x")).toBe(false);
+    expect(isWellFormedText("a\uD83D\uDE00b")).toBe(true);
+    const lone = await verifyDetachedJws({ jws: sampleJws, payload: `${samplePayload}\uD800`, expectedKid: sampleDid });
+    expect(lone.ok ? "" : lone.reason).toMatch(/well-formed/);
+    const bom = await verifyDetachedJws({ jws: `${header(`\uFEFF{"alg":"EdDSA","kid":"${sampleDid}"}`)}..${rfc8037Signature}`, payload: "x", expectedKid: sampleDid });
+    expect(bom.ok ? "" : bom.reason).toMatch(/not JSON/);
   });
 
   it("encodes and decodes base64url and base58btc strictly", () => {

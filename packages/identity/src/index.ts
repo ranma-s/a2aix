@@ -10,12 +10,13 @@ export function refuseKeyOperation(operation: string): never {
   );
 }
 
-export { base58btcDecode, base58btcEncode, base64UrlDecode, base64UrlEncode } from "./encoding.js";
+export { base58btcDecode, base58btcEncode, base64UrlDecode, base64UrlEncode, isWellFormedText } from "./encoding.js";
 export {
   didKeyFromEd25519,
   ed25519FromDidKey,
   ed25519PublicKeyLength,
   ed25519SignatureLength,
+  isUsableEd25519PublicKey,
   jwsAlgorithm,
   verifyDetachedJws,
   verifyEd25519,

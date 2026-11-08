@@ -192,11 +192,64 @@ function propertyName(node) {
   if (
     ts.isElementAccessExpression(node) &&
     node.argumentExpression !== undefined &&
-    ts.isStringLiteral(node.argumentExpression)
+    (ts.isStringLiteral(node.argumentExpression) || ts.isNoSubstitutionTemplateLiteral(node.argumentExpression))
   ) {
     return node.argumentExpression.text;
   }
   return undefined;
+}
+
+const globalObjectNames = new Set(["globalThis", "self", "window", "global"]);
+
+function isCryptoReference(node) {
+  if (ts.isIdentifier(node) && node.text === "crypto") {
+    const parent = node.parent;
+    if (parent === undefined) {
+      return false;
+    }
+    if (ts.isPropertyAccessExpression(parent) && parent.name === node) {
+      return false;
+    }
+    if ((ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent) || ts.isPropertySignature(parent) || ts.isPropertyDeclaration(parent) || ts.isMethodSignature(parent) || ts.isMethodDeclaration(parent) || ts.isParameter(parent) || ts.isImportSpecifier(parent) || ts.isBindingElement(parent)) && parent.name === node) {
+      return false;
+    }
+    return true;
+  }
+  return propertyName(node) === "crypto";
+}
+
+function checkDynamicEscapes(violations, node, location) {
+  if (isCryptoReference(node)) {
+    const parent = node.parent;
+    const followedBySubtle = parent !== undefined && propertyName(parent) === "subtle" && parent.expression === node;
+    if (!followedBySubtle) {
+      add(violations, "subtle-site", `${location}: crypto may only be used as crypto.subtle followed by an allowed call.`);
+    }
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    propertyName(node) === undefined &&
+    (isCryptoReference(unwrap(node.expression)) || (ts.isIdentifier(unwrap(node.expression)) && globalObjectNames.has(unwrap(node.expression).text)))
+  ) {
+    add(violations, "subtle-site", `${location}: computed access on a global object or crypto needs a literal key.`);
+  }
+  if (ts.isIdentifier(node) && node.text === "Reflect" && !(node.parent !== undefined && ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)) {
+    add(violations, "reflect-api", `${location}: Reflect can reach any property by a computed name. Use plain property access.`);
+  }
+  if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+    const callee = unwrap(node.expression);
+    if (ts.isIdentifier(callee) && (callee.text === "eval" || callee.text === "Function")) {
+      add(violations, "dynamic-code", `${location}: ${callee.text} runs code built from text.`);
+    }
+    if (ts.isCallExpression(node)) {
+      const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire = ts.isIdentifier(callee) && callee.text === "require";
+      const first = node.arguments[0];
+      if ((isImport || isRequire) && (first === undefined || !ts.isStringLiteral(first))) {
+        add(violations, "dynamic-import", `${location}: import() and require() need a string literal module name.`);
+      }
+    }
+  }
 }
 
 export function isTestFile(fileName) {
@@ -450,6 +503,7 @@ export function evaluateSource(input) {
         );
       }
     }
+    checkDynamicEscapes(violations, node, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
     const accessed = propertyName(node);
     if (accessed === "subtle") {
       checkSubtleAccess(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
@@ -1239,6 +1293,40 @@ export function runSelfTest() {
       reason,
     );
   }
+
+  for (const [label, code, reason] of [
+    ["Reflect.get on crypto is rejected", 'const subtle: unknown = Reflect.get(crypto, "subtle");', "reflect-api"],
+    ["Reflect.apply is rejected", "Reflect.apply(make, subtle, []);", "reflect-api"],
+    ["an alias of Reflect is rejected", "const r = Reflect;", "reflect-api"],
+    ["eval is rejected", 'eval("x");', "dynamic-code"],
+    ["the Function constructor is rejected", 'const f = new Function("return 1");', "dynamic-code"],
+    ["a built import name is rejected", 'await import("node:" + "crypto");', "dynamic-import"],
+    ["a template-literal key on crypto is rejected", "const k = crypto[`subtle`][`exportKey`];", "signing-api"],
+    ["a built key on globalThis is rejected", 'const c = globalThis["cry" + "pto"];', "subtle-site"],
+    ["passing crypto around is rejected", "const values = Object.values(crypto);", "subtle-site"],
+    ["an alias of crypto is rejected", "const c = crypto;", "subtle-site"],
+    ["globalThis.crypto without subtle is rejected", "const c = globalThis.crypto;", "subtle-site"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase("/virtual/packages/identity/src/signature.ts", `${code}\n`, "@ix/config", []),
+      reason,
+    );
+  }
+
+  cases += 1;
+  assertClean(
+    failures,
+    "globalThis.crypto.subtle.verify in identity is allowed",
+    sourceCase(
+      "/virtual/packages/identity/src/signature.ts",
+      'export const ok = await globalThis.crypto.subtle.verify("Ed25519", key, sig, data);\n',
+      "@ix/config",
+      [],
+    ),
+  );
 
   for (const [label, file, pkg] of [
     ["subtle.verify outside identity is rejected", "/virtual/packages/node/src/index.ts", "@ix/node"],
