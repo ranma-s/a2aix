@@ -42,6 +42,10 @@ JCS（正規化）とハッシュは PR #3 で入りました（下の「PR #3 �
 
 2026-11-03、ディレクターがセキュリティレビュアーの役を自分で務め、PR #3（RFC 8785 の正規化と SHA-256）を確認してマージしました。確認したのは、並び順が違っても指紋が同じになること、1円違えば指紋が変わること、標準の `sha256sum` と結果が一致すること、重複した欄と大きすぎる数を拒否すること、署名と鍵が拒否のままであることです。ディレクターはエンジニアではないため、コードの細かい欠陥までは見ていません。公開の前に、エンジニアのセキュリティレビュアーにもう一度見てもらいます。署名、鍵、JWS、`prevHash` の規則は、今もこの役の確認が要ります。
 
+## 署名の設計の確認（D04）
+
+2026-11-07、ディレクターがセキュリティレビュアーの役を自分で務め、署名の設計案（PR #20、[`spec/signature-design-draft.md`](spec/signature-design-draft.md)）のおすすめ案をすべて選びました。エージェントの署名は Ed25519、人間の承認はパスキー、本文を切り離した JWS（ヘッダーは `alg` と `kid` だけ）、試験の身元は `did:key` です。段階1のテストには、公開されている見本（RFC 8037）の公開鍵と署名だけを入れ、秘密鍵は入れません。段階2からは、テストの実行中にだけ鍵を作ります。失効は公開の前に作ります。時刻の裏付けは段階4の受領印で行います。各段階の実装も、ディレクターが振る舞いを確かめてからマージします。コードの細かい欠陥までは見ないため、公開の前にエンジニアのセキュリティレビュアーがもう一度見ます。
+
 ## 弁護士（スポット）
 
 常駐しません。必要なときに依頼します。最初に見るのは次です。
@@ -72,6 +76,10 @@ The first node is an ordinary peer. It is not a root. Signature, key, and append
 ## PR #3 review
 
 On 2026-11-03 the director acted as the security reviewer and merged PR #3 (RFC 8785 canonicalization and SHA-256). The director checked that reordered fields give the same digest, a one-yen change gives a different digest, the digest matches the standard `sha256sum`, duplicate keys and oversized integers are rejected, and signing and keys still refuse. The director is not an engineer and did not review the code line by line. An engineering security reviewer looks again before public release. Signatures, keys, JWS, and `prevHash` rules still need this role.
+
+## Signature design review (D04)
+
+On 2026-11-07 the director acted as the security reviewer and chose every recommended option in the signature design draft (PR #20, [`spec/signature-design-draft.md`](spec/signature-design-draft.md)): Ed25519 for agent signatures, passkeys for human approvals, detached JWS with only `alg` and `kid` in the header, and `did:key` for the trial. Stage 1 tests carry only the public key and signature of the published RFC 8037 sample, never its private key. From stage 2, tests create keys only while they run. Revocation is built before public release. Time is backed by relay receipts in stage 4. The director also checks each stage's behavior before it merges. The director does not review code line by line, so an engineering security reviewer looks again before public release.
 
 ## Signature placeholders in T11 and T14
 
