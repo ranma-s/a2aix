@@ -1,6 +1,6 @@
 # Approval
 
-人間の承認。合意案に、人間の鍵で署名する。未実装。
+人間の承認。合意案に、人間の鍵で署名する。模試の人間の署名は実装済み（段階3、T26）。本物の承認アプリは未実装。
 
 ## Sub-features
 
@@ -14,7 +14,7 @@ When negotiation reaches `awaiting_approval`, each person opens the approval app
 
 ## Driving it with verify-ix-node
 
-Blocked. The unit test proves that `signApproval("client")` throws and names a security reviewer. A throw is not an approval. Do not catch it and report a pass.
+The mock humans' approval signatures are checked by drive through the localhost trial: each `TermApproval` is signed by that party's own in-memory approver `did:key`, which differs from its agent. The real app is blocked. The unit test proves that `signApproval("client")` throws and names a security reviewer. A throw is not an approval. Do not catch it and report a pass.
 
 ## Gotchas
 

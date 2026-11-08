@@ -45,14 +45,17 @@ export type TermSideReport = {
   readonly shownFreeText: readonly string[];
 };
 
-export type TermPeers = {
-  readonly client: string;
-  readonly worker: string;
+export type TermParties<T> = {
+  readonly client: T;
+  readonly worker: T;
 };
 
-export type TermSigners = {
-  readonly client: EphemeralSigner;
-  readonly worker: EphemeralSigner;
+export type TermPeers = TermParties<string> & {
+  readonly approvers: TermParties<string>;
+};
+
+export type TermSigners = TermParties<EphemeralSigner> & {
+  readonly approvers: TermParties<EphemeralSigner>;
 };
 
 export type TermRelayReport = {
@@ -67,11 +70,37 @@ export function createTermSigner(): Promise<EphemeralSigner> {
 }
 
 export async function createTermSigners(): Promise<TermSigners> {
-  return { client: await createEphemeralSigner(), worker: await createEphemeralSigner() };
+  return {
+    client: await createEphemeralSigner(),
+    worker: await createEphemeralSigner(),
+    approvers: { client: await createEphemeralSigner(), worker: await createEphemeralSigner() },
+  };
 }
 
 export function peersOf(signers: TermSigners): TermPeers {
-  return { client: signers.client.did, worker: signers.worker.did };
+  return {
+    client: signers.client.did,
+    worker: signers.worker.did,
+    approvers: { client: signers.approvers.client.did, worker: signers.approvers.worker.did },
+  };
+}
+
+export function peersProblem(peers: TermPeers): string | undefined {
+  for (const party of ["client", "worker"] as const) {
+    if (peers.approvers[party] === peers[party]) {
+      return `the ${party} approver did:key is the ${party} agent did:key`;
+    }
+  }
+  const names = [peers.client, peers.worker, peers.approvers.client, peers.approvers.worker];
+  return new Set(names).size === names.length ? undefined : "the agent and approver did:key names of the two parties are not all different";
+}
+
+export function signerFor(message: TermMessage, signers: { readonly signer: EphemeralSigner; readonly approver: EphemeralSigner }): EphemeralSigner {
+  return message.type === "TermApproval" ? signers.approver : signers.signer;
+}
+
+export function expectedSignerOf(message: TermMessage, peers: TermPeers): string {
+  return message.type === "TermApproval" ? peers.approvers[message.from] : peers[message.from];
 }
 
 const maxRelaySteps = 400;
@@ -82,6 +111,7 @@ const termJobRecord = "term-job";
 type Side = {
   readonly party: Party;
   readonly signer: EphemeralSigner;
+  readonly approver: EphemeralSigner;
   readonly peers: TermPeers;
   readonly config: TermAgentConfig;
   readonly jobId: string;
@@ -335,7 +365,7 @@ async function checkMessageSignature(raw: JsonValue | undefined, message: TermMe
   if (verification !== jwsSignatureFormat) {
     return "the message is not signed";
   }
-  const checked = await verifyDetachedJws({ jws: message.signature.material, payload: signingInputExcludingSignature(raw), expectedKid: peers[message.from] });
+  const checked = await verifyDetachedJws({ jws: message.signature.material, payload: signingInputExcludingSignature(raw), expectedKid: expectedSignerOf(message, peers) });
   return checked.ok ? undefined : checked.reason;
 }
 
@@ -484,7 +514,7 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
     jobId,
     kind: negotiationKind,
     expiresAt: sealed.expiresAt,
-    body: { record: termRecord, extensionsHeader: mockExtensionsHeader, message: await signTermMessage(sealed, side.signer) },
+    body: { record: termRecord, extensionsHeader: mockExtensionsHeader, message: await signTermMessage(sealed, signerFor(sealed, side)) },
     ...(side.jobExpiresAt === undefined ? {} : { notAfter: side.jobExpiresAt }),
   });
   if (failure !== undefined) {
@@ -495,10 +525,11 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
   return true;
 }
 
-function newSide(party: Party, config: TermAgentConfig, signer: EphemeralSigner, peers: TermPeers, jobId: string, postedJob: TermJob | undefined, now: () => string): Side {
+function newSide(party: Party, config: TermAgentConfig, keys: { readonly signer: EphemeralSigner; readonly approver: EphemeralSigner }, peers: TermPeers, jobId: string, postedJob: TermJob | undefined, now: () => string): Side {
   return {
     party,
-    signer,
+    signer: keys.signer,
+    approver: keys.approver,
     peers,
     config,
     jobId,
@@ -540,11 +571,19 @@ export function createTermSide(input: {
   readonly jobId: string;
   readonly config: TermAgentConfig;
   readonly signer: EphemeralSigner;
+  readonly approver: EphemeralSigner;
   readonly peers: TermPeers;
   readonly postJob?: TermJob;
 }): TermSideHandle {
+  const peerProblem = peersProblem(input.peers);
+  if (peerProblem !== undefined) {
+    throw new Error(`the peers are not usable: ${peerProblem}`);
+  }
   if (input.peers[input.config.party] !== input.signer.did) {
     throw new Error(`the ${input.config.party} signer is not the ${input.config.party} named in peers`);
+  }
+  if (input.peers.approvers[input.config.party] !== input.approver.did) {
+    throw new Error(`the ${input.config.party} approver is not the ${input.config.party} approver named in peers`);
   }
   const problem = checkTermMandate(input.config.mandate);
   if (problem !== undefined) {
@@ -561,7 +600,7 @@ export function createTermSide(input: {
       }
     }
   }
-  const side = newSide(input.config.party, input.config, input.signer, input.peers, input.jobId, input.postJob, input.clock.now);
+  const side = newSide(input.config.party, input.config, { signer: input.signer, approver: input.approver }, input.peers, input.jobId, input.postJob, input.clock.now);
   let needsPost = input.postJob !== undefined;
   return {
     party: side.party,
@@ -604,8 +643,8 @@ export async function runTermRelay(input: {
 }): Promise<TermRelayReport> {
   const signers = input.signers;
   const peers = peersOf(signers);
-  const poster = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.client, signer: signers.client, peers, postJob: input.job });
-  const worker = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.worker, signer: signers.worker, peers });
+  const poster = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.client, signer: signers.client, approver: signers.approvers.client, peers, postJob: input.job });
+  const worker = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.worker, signer: signers.worker, approver: signers.approvers.worker, peers });
   let quiet = 0;
   for (let index = 0; index < maxRelaySteps && quiet < 2; index += 1) {
     const posterMoved = await poster.step();

@@ -247,7 +247,7 @@ function readPeer() {
   return new Promise((resolve, reject) => {
     let buffer = "";
     const timer = setTimeout(() => {
-      reject(new Error("no peer did arrived on stdin"));
+      reject(new Error("no peer did:key names arrived on stdin"));
     }, 10000);
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
@@ -258,11 +258,12 @@ function readPeer() {
       }
       clearTimeout(timer);
       process.stdin.pause();
-      const did = line.startsWith("peer ") ? line.slice("peer ".length).trim() : "";
-      if (didPattern.test(did)) {
-        resolve(did);
+      const names = line.startsWith("peer ") ? line.slice("peer ".length).trim().split(" ") : [];
+      const [agent, approver] = names;
+      if (names.length === 2 && didPattern.test(agent) && didPattern.test(approver)) {
+        resolve({ agent, approver });
       } else {
-        reject(new Error("the peer line is not a did:key"));
+        reject(new Error("the peer line is not two did:key names"));
       }
     });
   });
@@ -274,9 +275,13 @@ async function runRole(role) {
   const board = httpBoard(base);
   const clock = clockAt(readNow());
   const signer = await createTermSigner();
-  console.log(`did ${signer.did}`);
+  const approver = await createTermSigner();
+  console.log(`did ${signer.did} ${approver.did}`);
   const peer = await readPeer();
-  const peers = role === "poster" ? { client: signer.did, worker: peer } : { client: peer, worker: signer.did };
+  const peers =
+    role === "poster"
+      ? { client: signer.did, worker: peer.agent, approvers: { client: approver.did, worker: peer.approver } }
+      : { client: peer.agent, worker: signer.did, approvers: { client: peer.approver, worker: approver.did } };
   const side =
     role === "poster"
       ? createTermSide({
@@ -285,6 +290,7 @@ async function runRole(role) {
           jobId: sampleTermJob.jobId,
           config: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
           signer,
+          approver,
           peers,
           postJob: sampleTermJob,
         })
@@ -294,6 +300,7 @@ async function runRole(role) {
           jobId: sampleTermJob.jobId,
           config: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
           signer,
+          approver,
           peers,
         });
   for (let index = 0; index < 400; index += 1) {

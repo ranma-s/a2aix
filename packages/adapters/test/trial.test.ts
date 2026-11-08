@@ -52,6 +52,7 @@ describe("relay trial", () => {
       jobId: sampleTermJob.jobId,
       config: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
       signer: signers.client,
+      approver: signers.approvers.client,
       peers: peersOf(signers),
       postJob: sampleTermJob,
     });

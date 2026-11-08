@@ -12,7 +12,6 @@ const blockedFeatures = [
   "transcript",
   "log",
   "mcp",
-  "human-approval-signature",
   "relay-receipt",
 ];
 
@@ -21,6 +20,7 @@ const drivenFeatures = [
   "negotiation-mock",
   "ix-verify",
   "ed25519-agent-signatures",
+  "ed25519-mock-human-approval-signatures",
 ];
 
 function fail(message) {
@@ -142,7 +142,7 @@ function drive() {
   console.log(`drive: ${ok ? "ok" : "failed"}`);
   console.log(
     ok
-      ? "drive: localhost relay on 127.0.0.1 exercised; the JCS SHA-256 hash chain and the mock agents' Ed25519 signatures were checked; human approval signatures are not built yet"
+      ? "drive: localhost relay on 127.0.0.1 exercised; the JCS SHA-256 hash chain and the mock agents' and mock humans' Ed25519 signatures were checked; the approval app still refuses to sign"
       : "drive: failed",
   );
   if (!ok) {

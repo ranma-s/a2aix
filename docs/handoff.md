@@ -17,7 +17,7 @@ An A2A extension for job exchange. Two agents (a poster and a worker) negotiate 
 | Mock agents sign every relay event and term message | `@ix/agents` | Done (T25, T25b, T25c) |
 | Independent replay with signature and chain checks | `@ix/verify` | Done |
 | Conformance items 3–6 pass inside a limit; 1–2 pending | `@ix/conformance` | Done |
-| Human approval signatures | — | Not built (stage 3) |
+| Human approval signatures (mock human's own `did:key`) | `@ix/agents`, `@ix/verify` | Done (D06, T26); the real approval app is not built |
 | Relay receipts, transparency log, mandates, wire A2A | — | Not built |
 
 ## Decisions that bind you
@@ -36,6 +36,6 @@ An A2A extension for job exchange. Two agents (a poster and a worker) negotiate 
 
 ## Open items
 
-- Stage 3 (decided in D06, not built): a human approval is a `TermApproval` whose `signature` is a detached EdDSA JWS made with that human's own `did:key`, which must differ from the same party's agent `did:key`. How a person holds the key (passkey, wallet, company system) is outside the protocol. This replaces D04's passkey choice.
-- After stage 3, write one short standard document in English and Japanese. Stage 4 (relay receipts) is deferred; time stays the sender's declaration (T25c).
+- Stage 3 is built (D06, T26): a `TermApproval`'s `signature` is a detached EdDSA JWS by that party's approver `did:key`, and the four agent and approver names must all differ. The mock human is a second in-memory signer; `signApproval` still refuses. How a person holds the key is outside the protocol.
+- Next: write one short standard document in English and Japanese. Stage 4 (relay receipts) is deferred; time stays the sender's declaration (T25c).
 - PR #4 (public docs) and PR #11 wait on the director.

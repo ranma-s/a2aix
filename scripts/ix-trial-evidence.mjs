@@ -85,7 +85,7 @@ function waitForListen(child) {
   });
 }
 
-const didLine = /^did (did:key:z[1-9A-HJ-NP-Za-km-z]+)$/m;
+const didLine = /^did (did:key:z[1-9A-HJ-NP-Za-km-z]+) (did:key:z[1-9A-HJ-NP-Za-km-z]+)$/m;
 
 function runRole(role, url) {
   let announce;
@@ -106,7 +106,7 @@ function runRole(role, url) {
       stdout += chunk.toString();
       const found = didLine.exec(stdout);
       if (found !== null) {
-        announce({ did: found[1], tell: (peer) => child.stdin.end(`peer ${peer}\n`) });
+        announce({ did: found[1], approver: found[2], tell: (agent, approver) => child.stdin.end(`peer ${agent} ${approver}\n`) });
       }
     });
     child.stderr.on("data", (chunk) => {
@@ -116,7 +116,7 @@ function runRole(role, url) {
       resolve({ role, code: 1, stdout, stderr: `${stderr}${error.message}` });
     });
     child.on("exit", (code) => {
-      announce({ did: "", tell: () => undefined });
+      announce({ did: "", approver: "", tell: () => undefined });
       resolve({ role, code: code ?? 1, stdout, stderr });
     });
   });
@@ -165,12 +165,14 @@ try {
   const posterRun = runRole("poster", base);
   const workerRun = runRole("worker", base);
   const [posterId, workerId] = await Promise.all([posterRun.did, workerRun.did]);
-  if (posterId.did === "" || workerId.did === "" || posterId.did === workerId.did) {
-    throw new Error("the roles did not announce two different did:key names");
+  const names = [posterId.did, workerId.did, posterId.approver, workerId.approver];
+  if (names.includes("") || new Set(names).size !== names.length) {
+    throw new Error("the roles did not announce four different did:key names");
   }
-  posterId.tell(workerId.did);
-  workerId.tell(posterId.did);
+  posterId.tell(workerId.did, workerId.approver);
+  workerId.tell(posterId.did, posterId.approver);
   const peers = { client: posterId.did, worker: workerId.did };
+  const approvers = { client: posterId.approver, worker: workerId.approver };
   const [poster, worker] = await Promise.all([posterRun.done, workerRun.done]);
   if (poster.code !== 0 || worker.code !== 0) {
     throw new Error(`poster ${poster.stdout}${poster.stderr} worker ${worker.stdout}${worker.stderr}`);
@@ -209,6 +211,7 @@ try {
     jobId: sampleTermJob.jobId,
     events,
     issuers: peers,
+    approvers,
     profile: termRelayProfile,
   });
   if (
@@ -249,6 +252,7 @@ try {
       messages: report.messageCount,
       signatures: report.signatures,
       signer: "ed25519-in-memory",
+      approver: "ed25519-in-memory-mock-human",
     }),
   );
 } catch (error) {
