@@ -23,3 +23,4 @@ There is no screen. Drive prints one JSON object from the localhost trial. `nego
 - Do not sign here; signing lives in `@ix/identity`. Changing the hash-chain rule (T23) or the signature rules (D04, T25) is a human door.
 - The chain detects rewritten, reordered, or re-pointed messages, and counts forks. Signatures show which `did:key` wrote each event and message. Which person or company owns a `did:key` is told from outside until mandates exist.
 - `agreed` with `signatures: pass` is not a human-approved contract: approvals are still scripted, and their signatures (passkeys) are stage 3.
+- `deadlines: pass` means each message was published before its own expiry by the `createdAt` its sender signed. The agents judge expiry by their own clock, so a party colluding with a relay can make the two differ until relay receipts (stage 4, T25c).

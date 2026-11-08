@@ -276,6 +276,10 @@ async function sync(side: Side, board: JobBoard, jobId: string, clock: Clock): P
       continue;
     }
     side.applied.add(event.id);
+    if (!event.tags.some(([name, value]) => name === jobTag && value === jobId)) {
+      side.refusals.push(`${event.id}: the event is not tagged with this job`);
+      continue;
+    }
     if (event.issuer !== side.peers.client && event.issuer !== side.peers.worker) {
       side.refusals.push(`${event.id}: the issuer ${event.issuer} is neither party`);
       continue;

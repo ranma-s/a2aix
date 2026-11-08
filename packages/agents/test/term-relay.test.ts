@@ -198,6 +198,30 @@ describe("term negotiation over the relay", () => {
     expect(poster.report().session?.transcript.length).toBe(before);
   });
 
+  it("refuses a signed job event that a relay returns under another job's tag", async () => {
+    const signers = await createTermSigners();
+    const real = createTestBoard(clock);
+    const mistagged = await signedEvent(signers.client, {
+      id: "a-0001",
+      kind: jobKind,
+      tags: [[jobTag, "other-job"]],
+      createdAt: clock.now(),
+      expiresAt: job.expiresAt,
+      body: { record: "term-job", job: { ...job, roundLimitPerTerm: 1 } },
+    });
+    const lying = {
+      publish: real.publish,
+      subscribe: real.subscribe,
+      async query(filter: Parameters<typeof real.query>[0]) {
+        const answer = await real.query(filter);
+        return answer.ok ? { ok: true as const, events: [{ ...mistagged, signatureVerification: signatureVerification }, ...answer.events] } : answer;
+      },
+    };
+    const result = await run(lying, { signers });
+    expect(result.worker.refusals.some((reason) => reason.startsWith("a-0001: the event is not tagged with this job"))).toBe(true);
+    expect(result.worker.session?.phase).toBe("agreed");
+  });
+
   it("refuses a negotiation message that arrives before the job", async () => {
     const board = createTestBoard(clock);
     const signers = await createTermSigners();
