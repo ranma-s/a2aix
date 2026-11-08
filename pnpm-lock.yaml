@@ -17,6 +17,9 @@ importers:
       '@ix/agents':
         specifier: workspace:*
         version: link:packages/agents
+      '@ix/jcs':
+        specifier: workspace:*
+        version: link:packages/jcs
       '@ix/verify':
         specifier: workspace:*
         version: link:packages/verify

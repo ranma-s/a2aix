@@ -6,8 +6,10 @@ import {
   sampleTermClientMandate,
   sampleTermJob,
   sampleTermWorkerMandate,
+  termRelayProfile,
   withinLimit,
 } from "@ix/agents";
+import { parseJson } from "@ix/jcs";
 import { verifyTermTranscript } from "@ix/verify";
 
 const loopback = "127.0.0.1";
@@ -125,7 +127,7 @@ async function readJson(response) {
   const text = await response.text();
   let parsed;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseJson(text);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid json";
     throw new Error(message, { cause: error });
@@ -207,6 +209,7 @@ try {
     jobId: sampleTermJob.jobId,
     events,
     issuers: peers,
+    profile: termRelayProfile,
   });
   if (
     report.schema !== "pass" ||
@@ -241,6 +244,7 @@ try {
       deadlines: report.deadlines,
       chain: report.chain,
       forks: report.forks,
+      duplicates: report.duplicates,
       phase: report.phase,
       messages: report.messageCount,
       signatures: report.signatures,

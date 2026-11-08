@@ -92,8 +92,11 @@ async function signMessage(message: TermMessage, signer: EphemeralSigner): Promi
   return toJson({ ...message, signature: { verification: jwsSignatureFormat, material } });
 }
 
-async function signEvent(id: string, signer: EphemeralSigner, createdAt: string, body: JsonValue): Promise<JsonValue> {
-  const fields = { issuer: signer.did, kind: "k", tags: [["x-job", "j"]] as const, createdAt, expiresAt: "2026-11-05T00:00:00.000Z", body };
+const profile = { jobKind: "job", negotiationKind: "neg", jobTag: "x-job", extensionsHeader: "h" };
+
+async function signEvent(id: string, signer: EphemeralSigner, createdAt: string, body: JsonValue, kind?: string): Promise<JsonValue> {
+  const record = isRecord(body) ? body["record"] : undefined;
+  const fields = { issuer: signer.did, kind: kind ?? (record === "term-job" ? "job" : "neg"), tags: [["x-job", "j"]] as const, createdAt, expiresAt: "2026-11-05T00:00:00.000Z", body };
   return toJson({ ...fields, id, sig: await signer.signDetached(eventSigningInput(fields)) });
 }
 
@@ -108,7 +111,7 @@ async function toEvents(job: JsonValue, sealed: readonly TermMessage[], options:
   for (const [index, message] of sealed.entries()) {
     const own = signers[message.from];
     const signedMessage = await signMessage(message, options.author?.(index, message) ?? own);
-    events.push(await signEvent(`t-${String(index + 2).padStart(4, "0")}`, options.issuer?.(index, message) ?? own, options.createdAt?.(index) ?? at, { record: "term", message: signedMessage }));
+    events.push(await signEvent(`t-${String(index + 2).padStart(4, "0")}`, options.issuer?.(index, message) ?? own, options.createdAt?.(index) ?? at, { record: "term", extensionsHeader: "h", message: signedMessage }));
   }
   return events;
 }
@@ -129,7 +132,7 @@ function isList(value: JsonValue | undefined): value is readonly JsonValue[] {
 
 describe("independent term transcript verification", () => {
   it("replays the relay events to the same agreement and checks the hash chain", async () => {
-    const report = await verifyTermTranscript({ jobId: "j", events: await transcript(), issuers });
+    const report = await verifyTermTranscript({ jobId: "j", events: await transcript(), issuers, profile });
     expect(report).toMatchObject({ schema: "pass", issuers: "pass", replay: "pass", deadlines: "pass", chain: "pass", signatures: "pass", phase: "agreed" });
     expect(report.terms.find((term) => term.termId === "ix:price")?.value).toEqual(yen(180000));
   });
@@ -137,16 +140,16 @@ describe("independent term transcript verification", () => {
   it("fails when an event's issuer does not match its sender, a value is altered, or the job is missing", async () => {
     const { job, sealed } = await sealedMessages();
     const swapped = await toEvents(job, sealed, { issuer: (index) => (index === 0 ? signers.client : signers[sealed[index]?.from ?? "client"]) });
-    expect((await verifyTermTranscript({ jobId: "j", events: swapped, issuers })).issuers).toBe("fail");
+    expect((await verifyTermTranscript({ jobId: "j", events: swapped, issuers, profile })).issuers).toBe("fail");
     const first = sealed[0];
     if (first === undefined || first.type !== "TermPropose") {
       throw new Error("fixture");
     }
     const altered = await toEvents(job, [{ ...first, value: yen(1) }, ...sealed.slice(1)]);
-    const report = await verifyTermTranscript({ jobId: "j", events: altered, issuers });
+    const report = await verifyTermTranscript({ jobId: "j", events: altered, issuers, profile });
     expect(report.chain).toBe("fail");
     expect(report.phase).not.toBe("agreed");
-    expect((await verifyTermTranscript({ jobId: "j", events: (await transcript()).slice(1), issuers })).replay).toBe("fail");
+    expect((await verifyTermTranscript({ jobId: "j", events: (await transcript()).slice(1), issuers, profile })).replay).toBe("fail");
   });
 
   it("follows the hash chain, not relay order, and detects re-pointed messages, a changed job, and a rewritten agreement", async () => {
@@ -155,13 +158,13 @@ describe("independent term transcript verification", () => {
     if (a === undefined || b === undefined) {
       throw new Error("fixture");
     }
-    const shuffled = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [b, a, ...rest]), issuers });
+    const shuffled = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [b, a, ...rest]), issuers, profile });
     expect(shuffled).toMatchObject({ chain: "pass", replay: "pass", phase: "agreed", forks: 0 });
     const fork: TermMessage = { ...envelope("client"), type: "TermPropose", termId: "ix:revision-limit", value: 2, prevHash: a.prevHash };
-    const forked = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [a, b, ...rest, fork]), issuers });
+    const forked = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [a, b, ...rest, fork]), issuers, profile });
     expect(forked).toMatchObject({ chain: "pass", phase: "agreed", forks: 1 });
     const twice: TermMessage = { ...envelope("worker"), type: "TermPropose", termId: "ix:price", value: yen(1), prevHash: a.prevHash };
-    const twiceReport = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [a, b, ...rest, twice]), issuers });
+    const twiceReport = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [a, b, ...rest, twice]), issuers, profile });
     expect(twiceReport).toMatchObject({ chain: "fail", forks: 0 });
     expect(twiceReport.detail).toContain("two messages after the same message");
     const clientApproval = sealed[sealed.length - 2];
@@ -170,17 +173,17 @@ describe("independent term transcript verification", () => {
       throw new Error("fixture");
     }
     const early = { ...workerApproval, prevHash: clientApproval.prevHash };
-    const goodFork = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [...sealed, early]), issuers });
+    const goodFork = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [...sealed, early]), issuers, profile });
     expect(goodFork).toMatchObject({ chain: "pass", forks: 1 });
-    const badForkReport = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [...sealed, { ...early, agreementHash: "0".repeat(64) }]), issuers });
+    const badForkReport = await verifyTermTranscript({ jobId: "j", events: await toEvents(job, [...sealed, { ...early, agreementHash: "0".repeat(64) }]), issuers, profile });
     expect(badForkReport).toMatchObject({ chain: "fail", forks: 0 });
     expect(badForkReport.detail).toContain("agreementHash");
     const repointed = await toEvents(job, [{ ...b, prevHash: a.prevHash }, { ...a, prevHash: "0".repeat(64) }, ...rest]);
-    const repointedReport = await verifyTermTranscript({ jobId: "j", events: repointed, issuers });
+    const repointedReport = await verifyTermTranscript({ jobId: "j", events: repointed, issuers, profile });
     expect(repointedReport.chain).toBe("fail");
     expect(repointedReport.phase).not.toBe("agreed");
     const otherJob = isRecord(job) ? { ...job, roundLimitPerTerm: 2 } : job;
-    const reanchored = await verifyTermTranscript({ jobId: "j", events: await toEvents(otherJob, sealed), issuers });
+    const reanchored = await verifyTermTranscript({ jobId: "j", events: await toEvents(otherJob, sealed), issuers, profile });
     expect(reanchored.chain).toBe("fail");
     const lastTwo = sealed.slice(-3);
     const draft = lastTwo[0];
@@ -188,7 +191,7 @@ describe("independent term transcript verification", () => {
       throw new Error("fixture");
     }
     const rewritten = await toEvents(job, [...sealed.slice(0, -3), { ...draft, agreement: { ...draft.agreement, agreementId: "other" } }, ...sealed.slice(-2)]);
-    const rewrittenReport = await verifyTermTranscript({ jobId: "j", events: rewritten, issuers });
+    const rewrittenReport = await verifyTermTranscript({ jobId: "j", events: rewritten, issuers, profile });
     expect(rewrittenReport.chain).toBe("fail");
     expect(rewrittenReport.phase).not.toBe("agreed");
   });
@@ -214,20 +217,43 @@ describe("independent term transcript verification", () => {
       [await toEvents(job, sealed, { author: (index, message) => (index === 1 ? outsider : signers[message.from]) }), /message 2: message signature/],
     ];
     for (const [tampered, reason] of cases) {
-      const report = await verifyTermTranscript({ jobId: "j", events: tampered, issuers });
+      const report = await verifyTermTranscript({ jobId: "j", events: tampered, issuers, profile });
       expect(report.signatures).toBe("fail");
       expect(report.phase).not.toBe("agreed");
       expect(report.detail).toMatch(reason);
     }
     const byOutsider = await toEvents(job, sealed, { issuer: (index, message) => (index === 1 ? outsider : signers[message.from]) });
-    const outsiderReport = await verifyTermTranscript({ jobId: "j", events: byOutsider, issuers });
+    const outsiderReport = await verifyTermTranscript({ jobId: "j", events: byOutsider, issuers, profile });
     expect(outsiderReport.issuers).toBe("fail");
     expect(outsiderReport.phase).not.toBe("agreed");
+  });
+
+  it("reads events by kind and tag like the agents, and treats an exact copy of a signed event as a duplicate", async () => {
+    const { job, sealed } = await sealedMessages();
+    const events = await toEvents(job, sealed);
+    const first = events[1];
+    const jobEvent = events[0];
+    if (!isRecord(first) || !isRecord(jobEvent) || !isRecord(first["body"]) || !isRecord(jobEvent["body"])) {
+      throw new Error("fixture");
+    }
+    const hidden = await signEvent("t-0002", signers.worker, at, first["body"], "ix.not-negotiation");
+    const hiddenReport = await verifyTermTranscript({ jobId: "j", events: events.map((event, index) => (index === 1 ? hidden : event)), issuers, profile });
+    expect(hiddenReport.phase).not.toBe("agreed");
+    expect(hiddenReport.chain).toBe("fail");
+    const jobAsMessage = await signEvent("t-0001", signers.client, at, jobEvent["body"], "neg");
+    const jobAsMessageReport = await verifyTermTranscript({ jobId: "j", events: [jobAsMessage, ...events.slice(1)], issuers, profile });
+    expect(jobAsMessageReport.phase).not.toBe("agreed");
+    expect(jobAsMessageReport.schema).toBe("fail");
+    const untagged = await verifyTermTranscript({ jobId: "other", events, issuers, profile });
+    expect(untagged.phase).not.toBe("agreed");
+    const copies = [...events, { ...first, id: "t-9998" }, { ...jobEvent, id: "t-9999" }];
+    const copied = await verifyTermTranscript({ jobId: "j", events: copies, issuers, profile });
+    expect(copied).toMatchObject({ phase: "agreed", chain: "pass", replay: "pass", signatures: "pass", duplicates: 2 });
   });
 
   it("fails deadlines when a message is published at or after its own expiry", async () => {
     const { job, sealed } = await sealedMessages();
     const late = await toEvents(job, sealed, { createdAt: (index) => (index === 0 ? "2026-11-04T00:00:00.000Z" : at) });
-    expect((await verifyTermTranscript({ jobId: "j", events: late, issuers })).deadlines).toBe("fail");
+    expect((await verifyTermTranscript({ jobId: "j", events: late, issuers, profile })).deadlines).toBe("fail");
   });
 });

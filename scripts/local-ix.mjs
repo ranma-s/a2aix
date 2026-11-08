@@ -2,10 +2,12 @@
 
 import { createServer } from "node:http";
 import { createLocalRelay } from "@ix/adapters";
+import { parseJson } from "@ix/jcs";
 import {
   clockAt,
   createTermSide,
   createTermSigner,
+  createTermSigners,
   runTermRelay,
   sampleNow,
   sampleTermClientMandate,
@@ -118,7 +120,7 @@ async function postJson(url, payload) {
   const text = await response.text();
   let parsed;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseJson(text);
   } catch (error) {
     throw new Error("invalid json", { cause: error });
   }
@@ -218,7 +220,7 @@ async function handle(req, res, relay) {
   }
   let parsed;
   try {
-    parsed = JSON.parse(text.length === 0 ? "{}" : text);
+    parsed = parseJson(text.length === 0 ? "{}" : text);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid json";
     send(res, 400, { ok: false, reason: "bad_body", detail: message });
@@ -320,6 +322,7 @@ async function exchange() {
     job: sampleTermJob,
     client: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
     worker: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
+    signers: await createTermSigners(),
   });
   const posterPhase = report.poster.session?.phase ?? "none";
   const workerPhase = report.worker.session?.phase ?? "none";

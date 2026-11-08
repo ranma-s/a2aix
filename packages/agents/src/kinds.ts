@@ -5,3 +5,10 @@ export const negotiationKind = "x-mock/negotiation-message" as const;
 export const jobTag = "x-job" as const;
 
 export const mockExtensionsHeader = formatExtensionHeader(profileExtensionOrder);
+
+export const termRelayProfile = {
+  jobKind,
+  negotiationKind,
+  jobTag,
+  extensionsHeader: mockExtensionsHeader,
+} as const;

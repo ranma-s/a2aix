@@ -4,6 +4,7 @@ export {
   jobTag,
   mockExtensionsHeader,
   negotiationKind,
+  termRelayProfile,
 } from "./kinds.js";
 export { clockAt, sampleNow } from "./clock.js";
 export { redactFreeText } from "./redact.js";

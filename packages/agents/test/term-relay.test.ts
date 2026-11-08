@@ -44,14 +44,14 @@ const workerMandate: TermMandate = {
   "web:responsive": { kind: "one-of", values: [true] },
 };
 
-function run(board = createTestBoard(clock), overrides: { readonly human?: "approve" | "reject"; readonly signers?: TermSigners } = {}) {
+async function run(board = createTestBoard(clock), overrides: { readonly human?: "approve" | "reject"; readonly signers?: TermSigners } = {}) {
   return runTermRelay({
     board,
     clock,
     job,
     client: { party: "client", mandate: clientMandate, human: overrides.human ?? "approve" },
     worker: { party: "worker", mandate: workerMandate, human: "approve" },
-    ...(overrides.signers === undefined ? {} : { signers: overrides.signers }),
+    signers: overrides.signers ?? (await createTermSigners()),
   });
 }
 
@@ -154,7 +154,7 @@ describe("term negotiation over the relay", () => {
     }
   });
 
-  it("records a second message after the same message as a fork and does not apply it", async () => {
+  it("drops an exact copy as a duplicate, records a second message after the same message as a fork, and applies neither", async () => {
     const board = createTestBoard(clock);
     const signers = await createTermSigners();
     const peers = peersOf(signers);
@@ -174,10 +174,27 @@ describe("term negotiation over the relay", () => {
     const before = poster.report().session?.transcript.length;
     const answer = await board.publish({ ...first, id: "zz-fork" });
     expect(answer.ok).toBe(true);
+    const body = first.body;
+    const decoded = isPlainObject(body) ? decodeTermMessage(body["message"]) : undefined;
+    if (decoded === undefined || !decoded.ok || (decoded.message.type !== "TermPropose" && decoded.message.type !== "TermCounter")) {
+      throw new Error("the worker's first message is not a proposal");
+    }
+    const other = { ...decoded.message, note: "a different second message" };
+    const forked = await signedEvent(signers.worker, {
+      id: "zz-other",
+      kind: negotiationKind,
+      tags: [[jobTag, job.jobId]],
+      createdAt: first.createdAt,
+      expiresAt: first.expiresAt,
+      body: { record: "term", extensionsHeader: mockExtensionsHeader, message: await signTermMessage(other, signers.worker) },
+    });
+    expect((await board.publish(forked)).ok).toBe(true);
     await poster.sync();
     await worker.sync();
-    expect(poster.report().refusals.some((reason) => reason.startsWith("zz-fork: a fork"))).toBe(true);
-    expect(worker.report().refusals.some((reason) => reason.startsWith("zz-fork: a fork"))).toBe(true);
+    expect(poster.report().refusals.some((reason) => reason.startsWith("zz-other: a fork"))).toBe(true);
+    expect(worker.report().refusals.some((reason) => reason.startsWith("zz-other: a fork"))).toBe(true);
+    expect(poster.report().refusals.some((reason) => reason.startsWith("zz-fork: a duplicate of an earlier signed event"))).toBe(true);
+    expect(worker.report().refusals.some((reason) => reason.startsWith("zz-fork: a duplicate of an earlier signed event"))).toBe(true);
     expect(poster.report().session?.transcript.length).toBe(before);
   });
 
@@ -253,6 +270,7 @@ describe("term negotiation over the relay", () => {
         job: { ...job, preset: [{ termId: "ix:price", value: { amount: 900000, currency: "JPY", taxIncluded: true } }] },
         client: { party: "client", mandate: clientMandate, human: "approve" },
         worker: { party: "worker", mandate: workerMandate, human: "approve" },
+        signers: await createTermSigners(),
       }),
     ).rejects.toThrow(/ix:price/);
   });
@@ -301,6 +319,7 @@ describe("term negotiation over the relay", () => {
       job: { ...job, expiresAt: shortExpiry },
       client: { party: "client", mandate: clientMandate, human: "approve" },
       worker: { party: "worker", mandate: workerMandate, human: "approve" },
+      signers: await createTermSigners(),
     });
     expect(result.events.every((event) => Date.parse(event.createdAt) < Date.parse(shortExpiry))).toBe(true);
     expect(result.poster.session?.phase).not.toBe("agreed");

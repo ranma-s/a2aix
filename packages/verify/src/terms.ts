@@ -12,6 +12,7 @@ export type TermVerifyReport = {
   readonly chain: "pass" | "fail";
   readonly signatures: "pass" | "fail";
   readonly forks: number;
+  readonly duplicates: number;
   readonly phase: string;
   readonly messageCount: number;
   readonly terms: readonly FixedTerm[];
@@ -36,6 +37,17 @@ function eventTags(value: JsonValue | undefined): readonly (readonly [string, st
     tags.push([name, tagValue]);
   }
   return tags;
+}
+
+function signedContentOf(event: JsonObject, issuer: string): string {
+  return eventSigningInput({
+    issuer,
+    kind: text(event, "kind") ?? "",
+    tags: eventTags(event["tags"]) ?? [],
+    createdAt: text(event, "createdAt") ?? "",
+    expiresAt: text(event, "expiresAt") ?? "",
+    body: event["body"],
+  });
 }
 
 async function eventSignatureProblem(event: JsonObject, issuer: string): Promise<string | undefined> {
@@ -112,12 +124,22 @@ async function openFromJob(body: JsonObject, jobId: string): Promise<TermSession
   return opened.ok ? opened.session : opened.reason;
 }
 
+export type TermRelayProfile = {
+  readonly jobKind: string;
+  readonly negotiationKind: string;
+  readonly jobTag: string;
+  readonly extensionsHeader: string;
+};
+
 export async function verifyTermTranscript(input: {
   readonly jobId: string;
   readonly events: readonly JsonValue[];
   readonly issuers: { readonly client: string; readonly worker: string };
+  readonly profile: TermRelayProfile;
 }): Promise<TermVerifyReport> {
   const problems: string[] = [];
+  const seen = new Set<string>();
+  let duplicates = 0;
   let signatures: "pass" | "fail" = "pass";
   let schema: "pass" | "fail" = "pass";
   let issuers: "pass" | "fail" = "pass";
@@ -136,7 +158,9 @@ export async function verifyTermTranscript(input: {
     const body = event["body"];
     const issuer = text(event, "issuer");
     const createdAt = text(event, "createdAt") ?? "";
-    if (body["record"] !== "term-job" && body["record"] !== "term") {
+    const kind = text(event, "kind");
+    const tagged = eventTags(event["tags"])?.some(([name, value]) => name === input.profile.jobTag && value === input.jobId) ?? false;
+    if (!tagged || (kind !== input.profile.jobKind && kind !== input.profile.negotiationKind)) {
       continue;
     }
     if (issuer === undefined || (issuer !== input.issuers.client && issuer !== input.issuers.worker)) {
@@ -150,7 +174,18 @@ export async function verifyTermTranscript(input: {
       problems.push(`an event from ${issuer}: event signature: ${eventProblem}`);
       continue;
     }
-    if (body["record"] === "term-job") {
+    const signedContent = signedContentOf(event, issuer);
+    if (seen.has(signedContent)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(signedContent);
+    if (kind === input.profile.jobKind) {
+      if (body["record"] !== "term-job") {
+        schema = "fail";
+        problems.push("a job event does not carry a term job record");
+        continue;
+      }
       if (issuer !== input.issuers.client) {
         issuers = "fail";
         problems.push("a job record was not issued by the client");
@@ -168,6 +203,11 @@ export async function verifyTermTranscript(input: {
       } else {
         session = opened;
       }
+      continue;
+    }
+    if (body["record"] !== "term" || body["extensionsHeader"] !== input.profile.extensionsHeader) {
+      schema = "fail";
+      problems.push("a negotiation event is not a term record that activates negotiation");
       continue;
     }
     count += 1;
@@ -267,6 +307,7 @@ export async function verifyTermTranscript(input: {
     chain,
     signatures,
     forks,
+    duplicates,
     phase: session?.phase ?? "",
     messageCount: count,
     terms: session?.draft?.terms ?? [],

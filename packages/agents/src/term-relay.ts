@@ -90,6 +90,7 @@ type Side = {
   jobExpiresAt: string | undefined;
   session: TermSession | undefined;
   readonly applied: Set<string>;
+  readonly signedContents: Set<string>;
   readonly pending: { readonly id: string; readonly message: TermMessage }[];
   readonly refusals: string[];
   readonly escalations: TermTrialEscalation[];
@@ -279,11 +280,17 @@ async function sync(side: Side, board: JobBoard, jobId: string, clock: Clock): P
       side.refusals.push(`${event.id}: the issuer ${event.issuer} is neither party`);
       continue;
     }
-    const eventSignature = await verifyDetachedJws({ jws: event.sig, payload: eventSigningInput(event), expectedKid: event.issuer });
+    const signedContent = eventSigningInput(event);
+    const eventSignature = await verifyDetachedJws({ jws: event.sig, payload: signedContent, expectedKid: event.issuer });
     if (!eventSignature.ok) {
       side.refusals.push(`${event.id}: event signature: ${eventSignature.reason}`);
       continue;
     }
+    if (side.signedContents.has(signedContent)) {
+      side.refusals.push(`${event.id}: a duplicate of an earlier signed event`);
+      continue;
+    }
+    side.signedContents.add(signedContent);
     if (event.kind === jobKind) {
       await acceptJob(side, event);
       continue;
@@ -496,6 +503,7 @@ function newSide(party: Party, config: TermAgentConfig, signer: EphemeralSigner,
     jobExpiresAt: undefined,
     session: undefined,
     applied: new Set<string>(),
+    signedContents: new Set<string>(),
     pending: [],
     refusals: [],
     escalations: [],
@@ -588,9 +596,9 @@ export async function runTermRelay(input: {
   readonly job: TermJob;
   readonly client: TermAgentConfig;
   readonly worker: TermAgentConfig;
-  readonly signers?: TermSigners;
+  readonly signers: TermSigners;
 }): Promise<TermRelayReport> {
-  const signers = input.signers ?? (await createTermSigners());
+  const signers = input.signers;
   const peers = peersOf(signers);
   const poster = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.client, signer: signers.client, peers, postJob: input.job });
   const worker = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.worker, signer: signers.worker, peers });

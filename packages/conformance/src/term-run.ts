@@ -19,6 +19,7 @@ import {
   sampleTermWorkerMandate,
   termInjectionCases,
   termJobAnchor,
+  termRelayProfile,
   withinLimit,
 } from "@ix/agents";
 import type { JobBoard, TermInjectionCase, TermJob, TermMandate, TermRelayReport, TermSigners } from "@ix/agents";
@@ -169,6 +170,7 @@ async function replayPasses(report: TermRelayReport): Promise<boolean> {
     jobId: report.poster.session?.jobId ?? sampleTermJob.jobId,
     events: report.events.map((event) => toJson(event)),
     issuers: report.peers,
+    profile: termRelayProfile,
   });
   return (
     verified.schema === "pass" &&

@@ -29,6 +29,7 @@ describe("relay trial", () => {
       job: sampleTermJob,
       client: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
       worker: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
+      signers: await createTermSigners(),
     });
     expect(report.poster.session?.phase).toBe("agreed");
     expect(report.worker.session?.phase).toBe("agreed");
