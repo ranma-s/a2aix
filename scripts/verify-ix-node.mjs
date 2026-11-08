@@ -12,14 +12,15 @@ const blockedFeatures = [
   "transcript",
   "log",
   "mcp",
-  "signature",
-  "jws",
+  "human-approval-signature",
+  "relay-receipt",
 ];
 
 const drivenFeatures = [
   "distribution-localhost-publish-query",
   "negotiation-mock",
   "ix-verify",
+  "ed25519-agent-signatures",
 ];
 
 function fail(message) {
@@ -120,8 +121,8 @@ function drive() {
     bind: "127.0.0.1",
     protocolFeaturesDriven: ok ? drivenFeatures : [],
     blockedFeatures,
-    conformance: "partial-items-3-6-pass-signatures-deferred",
-    deferredChecks: ["signature", "jws"],
+    conformance: "partial-items-3-6-pass-mock-agent-signatures-checked",
+    signatures: "ed25519-detached-jws-in-memory-keys-checked",
     hashChain: "jcs-sha256-checked",
     ok,
     steps: steps.map((step) => ({
@@ -141,7 +142,7 @@ function drive() {
   console.log(`drive: ${ok ? "ok" : "failed"}`);
   console.log(
     ok
-      ? "drive: localhost relay on 127.0.0.1 exercised; the JCS SHA-256 hash chain was checked; signatures and JWS stay deferred"
+      ? "drive: localhost relay on 127.0.0.1 exercised; the JCS SHA-256 hash chain and the mock agents' Ed25519 signatures were checked; human approval signatures are not built yet"
       : "drive: failed",
   );
   if (!ok) {

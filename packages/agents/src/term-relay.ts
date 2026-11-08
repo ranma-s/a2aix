@@ -4,6 +4,7 @@ import {
   coreSheet,
   decodeTermMessage,
   expectedPrevHash,
+  jwsSignatureFormat,
   openTermSession,
   presetChainProblem,
   sameTermValue,
@@ -14,8 +15,11 @@ import {
 } from "@ix/a2a-ext-negotiation";
 import type { Clock, Party, PresetTerm, TermJson, TermMessage, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
 import type { JsonObject, JsonValue, StoredEvent } from "@ix/distribution";
+import { createEphemeralSigner, verifyDetachedJws } from "@ix/identity";
+import type { EphemeralSigner } from "@ix/identity";
+import { eventSigningInput, signingInputExcludingSignature } from "@ix/protocol-core";
 import type { JobBoard } from "./board.js";
-import { jobKind, jobTag, mockExtensionsHeader, negotiationKind, posterIssuer, unverifiedSig, workerIssuer } from "./kinds.js";
+import { jobKind, jobTag, mockExtensionsHeader, negotiationKind } from "./kinds.js";
 import { redactFreeText } from "./redact.js";
 import { checkTermMandate, nextTurn, withinLimit } from "./terms.js";
 import type { TermAgentConfig, TermTrialEscalation } from "./terms.js";
@@ -41,11 +45,34 @@ export type TermSideReport = {
   readonly shownFreeText: readonly string[];
 };
 
+export type TermPeers = {
+  readonly client: string;
+  readonly worker: string;
+};
+
+export type TermSigners = {
+  readonly client: EphemeralSigner;
+  readonly worker: EphemeralSigner;
+};
+
 export type TermRelayReport = {
   readonly poster: TermSideReport;
   readonly worker: TermSideReport;
   readonly events: readonly StoredEvent[];
+  readonly peers: TermPeers;
 };
+
+export function createTermSigner(): Promise<EphemeralSigner> {
+  return createEphemeralSigner();
+}
+
+export async function createTermSigners(): Promise<TermSigners> {
+  return { client: await createEphemeralSigner(), worker: await createEphemeralSigner() };
+}
+
+export function peersOf(signers: TermSigners): TermPeers {
+  return { client: signers.client.did, worker: signers.worker.did };
+}
 
 const maxRelaySteps = 400;
 const maxIdAttempts = 3;
@@ -54,7 +81,8 @@ const termJobRecord = "term-job";
 
 type Side = {
   readonly party: Party;
-  readonly issuer: string;
+  readonly signer: EphemeralSigner;
+  readonly peers: TermPeers;
   readonly config: TermAgentConfig;
   readonly jobId: string;
   readonly postedJob: TermJob | undefined;
@@ -91,10 +119,6 @@ function toJson(value: unknown): JsonValue {
 
 function isObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function issuerOf(party: Party): string {
-  return party === "client" ? posterIssuer : workerIssuer;
 }
 
 export function findTermSheet(sheetId: string, version: number): TermSheet | undefined {
@@ -185,10 +209,10 @@ async function loadEvents(board: JobBoard, jobId: string): Promise<StoredEvent[]
 
 const maxIdDigits = 9;
 
-function nextId(events: readonly StoredEvent[]): string {
+function nextId(events: readonly StoredEvent[], peers: TermPeers): string {
   let max = 0;
   for (const event of events) {
-    if (event.issuer !== posterIssuer && event.issuer !== workerIssuer) {
+    if (event.issuer !== peers.client && event.issuer !== peers.worker) {
       continue;
     }
     const suffix = event.id.startsWith("t-") ? event.id.slice(2) : "";
@@ -208,7 +232,8 @@ function nextId(events: readonly StoredEvent[]): string {
 async function publish(input: {
   readonly board: JobBoard;
   readonly clock: Clock;
-  readonly issuer: string;
+  readonly signer: EphemeralSigner;
+  readonly peers: TermPeers;
   readonly jobId: string;
   readonly kind: string;
   readonly expiresAt: string;
@@ -219,16 +244,20 @@ async function publish(input: {
   if (input.notAfter !== undefined && Date.parse(input.notAfter) <= Date.parse(createdAt)) {
     return "the job has expired; nothing was published";
   }
+  const fields = {
+    issuer: input.signer.did,
+    kind: input.kind,
+    tags: [[jobTag, input.jobId]] as const,
+    createdAt,
+    expiresAt: input.expiresAt,
+    body: input.body,
+  };
+  const sig = await input.signer.signDetached(eventSigningInput(fields));
   for (let attempt = 0; attempt < maxIdAttempts; attempt += 1) {
     const result = await input.board.publish({
-      id: nextId(await loadEvents(input.board, input.jobId)),
-      issuer: input.issuer,
-      kind: input.kind,
-      tags: [[jobTag, input.jobId]],
-      createdAt,
-      expiresAt: input.expiresAt,
-      body: input.body,
-      sig: unverifiedSig,
+      ...fields,
+      id: nextId(await loadEvents(input.board, input.jobId), input.peers),
+      sig,
     });
     if (result.ok) {
       return undefined;
@@ -246,6 +275,15 @@ async function sync(side: Side, board: JobBoard, jobId: string, clock: Clock): P
       continue;
     }
     side.applied.add(event.id);
+    if (event.issuer !== side.peers.client && event.issuer !== side.peers.worker) {
+      side.refusals.push(`${event.id}: the issuer ${event.issuer} is neither party`);
+      continue;
+    }
+    const eventSignature = await verifyDetachedJws({ jws: event.sig, payload: eventSigningInput(event), expectedKid: event.issuer });
+    if (!eventSignature.ok) {
+      side.refusals.push(`${event.id}: event signature: ${eventSignature.reason}`);
+      continue;
+    }
     if (event.kind === jobKind) {
       await acceptJob(side, event);
       continue;
@@ -267,13 +305,33 @@ async function sync(side: Side, board: JobBoard, jobId: string, clock: Clock): P
       side.refusals.push(`${event.id}: ${decoded.reason}`);
       continue;
     }
-    if (event.issuer !== issuerOf(decoded.message.from)) {
+    if (event.issuer !== side.peers[decoded.message.from]) {
       side.refusals.push(`${event.id}: issuer does not match the sending party`);
+      continue;
+    }
+    const messageSignature = await checkMessageSignature(body["message"], decoded.message, side.peers);
+    if (messageSignature !== undefined) {
+      side.refusals.push(`${event.id}: message signature: ${messageSignature}`);
       continue;
     }
     side.pending.push({ id: event.id, message: decoded.message });
   }
   await drainPending(side, clock);
+}
+
+async function checkMessageSignature(raw: JsonValue | undefined, message: TermMessage, peers: TermPeers): Promise<string | undefined> {
+  const verification: string = message.signature.verification;
+  if (verification !== jwsSignatureFormat) {
+    return "the message is not signed";
+  }
+  const checked = await verifyDetachedJws({ jws: message.signature.material, payload: signingInputExcludingSignature(raw), expectedKid: peers[message.from] });
+  return checked.ok ? undefined : checked.reason;
+}
+
+export async function signTermMessage(message: TermMessage, signer: EphemeralSigner): Promise<JsonValue> {
+  const unsigned = toJson({ ...message, signature: { verification: jwsSignatureFormat, material: "" } });
+  const material = await signer.signDetached(signingInputExcludingSignature(unsigned));
+  return toJson({ ...message, signature: { verification: jwsSignatureFormat, material } });
 }
 
 async function drainPending(side: Side, clock: Clock): Promise<void> {
@@ -335,7 +393,7 @@ async function acceptJob(side: Side, event: StoredEvent): Promise<void> {
   if (side.stopped) {
     return;
   }
-  if (event.issuer !== posterIssuer) {
+  if (event.issuer !== side.peers.client) {
     side.refusals.push(`${event.id}: a job event from ${event.issuer} is not from the poster`);
     return;
   }
@@ -410,11 +468,12 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
   const failure = await publish({
     board,
     clock,
-    issuer: side.issuer,
+    signer: side.signer,
+    peers: side.peers,
     jobId,
     kind: negotiationKind,
     expiresAt: sealed.expiresAt,
-    body: { record: termRecord, extensionsHeader: mockExtensionsHeader, message: toJson(sealed) },
+    body: { record: termRecord, extensionsHeader: mockExtensionsHeader, message: await signTermMessage(sealed, side.signer) },
     ...(side.jobExpiresAt === undefined ? {} : { notAfter: side.jobExpiresAt }),
   });
   if (failure !== undefined) {
@@ -425,10 +484,11 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
   return true;
 }
 
-function newSide(party: Party, config: TermAgentConfig, jobId: string, postedJob: TermJob | undefined, now: () => string): Side {
+function newSide(party: Party, config: TermAgentConfig, signer: EphemeralSigner, peers: TermPeers, jobId: string, postedJob: TermJob | undefined, now: () => string): Side {
   return {
     party,
-    issuer: issuerOf(party),
+    signer,
+    peers,
     config,
     jobId,
     postedJob,
@@ -467,8 +527,13 @@ export function createTermSide(input: {
   readonly clock: Clock;
   readonly jobId: string;
   readonly config: TermAgentConfig;
+  readonly signer: EphemeralSigner;
+  readonly peers: TermPeers;
   readonly postJob?: TermJob;
 }): TermSideHandle {
+  if (input.peers[input.config.party] !== input.signer.did) {
+    throw new Error(`the ${input.config.party} signer is not the ${input.config.party} named in peers`);
+  }
   const problem = checkTermMandate(input.config.mandate);
   if (problem !== undefined) {
     throw new Error(`${input.config.party} mandate is not usable: ${problem}`);
@@ -484,7 +549,7 @@ export function createTermSide(input: {
       }
     }
   }
-  const side = newSide(input.config.party, input.config, input.jobId, input.postJob, input.clock.now);
+  const side = newSide(input.config.party, input.config, input.signer, input.peers, input.jobId, input.postJob, input.clock.now);
   let needsPost = input.postJob !== undefined;
   return {
     party: side.party,
@@ -494,7 +559,8 @@ export function createTermSide(input: {
         const posted = await publish({
           board: input.board,
           clock: input.clock,
-          issuer: posterIssuer,
+          signer: input.signer,
+          peers: input.peers,
           jobId: input.jobId,
           kind: jobKind,
           expiresAt: input.postJob.expiresAt,
@@ -522,9 +588,12 @@ export async function runTermRelay(input: {
   readonly job: TermJob;
   readonly client: TermAgentConfig;
   readonly worker: TermAgentConfig;
+  readonly signers?: TermSigners;
 }): Promise<TermRelayReport> {
-  const poster = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.client, postJob: input.job });
-  const worker = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.worker });
+  const signers = input.signers ?? (await createTermSigners());
+  const peers = peersOf(signers);
+  const poster = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.client, signer: signers.client, peers, postJob: input.job });
+  const worker = createTermSide({ board: input.board, clock: input.clock, jobId: input.job.jobId, config: input.worker, signer: signers.worker, peers });
   let quiet = 0;
   for (let index = 0; index < maxRelaySteps && quiet < 2; index += 1) {
     const posterMoved = await poster.step();
@@ -536,5 +605,5 @@ export async function runTermRelay(input: {
   }
   await poster.sync();
   await worker.sync();
-  return { poster: poster.report(), worker: worker.report(), events: await loadEvents(input.board, input.job.jobId) };
+  return { poster: poster.report(), worker: worker.report(), events: await loadEvents(input.board, input.job.jobId), peers };
 }

@@ -135,11 +135,11 @@ function subtleMethodCall(subtleNode) {
 
 function checkSubtleAccess(violations, node, fileName, location) {
   const used = subtleMethodCall(node);
-  if (used === undefined || !["digest", "importKey", "verify"].includes(used.method)) {
+  if (used === undefined || !["digest", "importKey", "verify", "generateKey", "exportKey", "sign"].includes(used.method)) {
     add(
       violations,
       "subtle-site",
-      `${location}: crypto.subtle may only be called directly as digest, importKey, or verify.`,
+      `${location}: crypto.subtle may only be called directly as digest, importKey, verify, generateKey, exportKey, or sign.`,
     );
     return;
   }
@@ -171,6 +171,41 @@ function checkSubtleAccess(violations, node, fileName, location) {
     }
     return;
   }
+  if (used.method === "generateKey") {
+    if (
+      args.length !== 3 ||
+      !isStringArgument(args[0], "Ed25519") ||
+      args[1]?.kind !== ts.SyntaxKind.FalseKeyword ||
+      !isSignVerifyUsage(args[2])
+    ) {
+      add(
+        violations,
+        "key-generate",
+        `${location}: generateKey may only create a non-extractable Ed25519 key pair for sign and verify.`,
+      );
+    }
+    return;
+  }
+  if (used.method === "exportKey") {
+    if (args.length !== 2 || !isStringArgument(args[0], "raw") || args[1] === undefined || propertyName(args[1]) !== "publicKey") {
+      add(
+        violations,
+        "key-export",
+        `${location}: exportKey may only export the raw public key of a pair (pair.publicKey).`,
+      );
+    }
+    return;
+  }
+  if (used.method === "sign") {
+    if (args.length !== 3 || !isStringArgument(args[0], "Ed25519") || args[1] === undefined || propertyName(args[1]) !== "privateKey") {
+      add(
+        violations,
+        "sign-algorithm",
+        `${location}: subtle.sign may only use "Ed25519" with the private key of a generated pair (pair.privateKey).`,
+      );
+    }
+    return;
+  }
   if (args.length !== 4 || !isStringArgument(args[0], "Ed25519")) {
     add(
       violations,
@@ -179,6 +214,28 @@ function checkSubtleAccess(violations, node, fileName, location) {
     );
   }
 }
+
+function isSignVerifyUsage(node) {
+  return (
+    node !== undefined &&
+    ts.isArrayLiteralExpression(node) &&
+    node.elements.length === 2 &&
+    isStringArgument(node.elements[0], "sign") &&
+    isStringArgument(node.elements[1], "verify")
+  );
+}
+
+function isAllowedUsageLiteral(node, fileName) {
+  const array = node.parent;
+  const call = array?.parent;
+  if (!isIdentityKeySource(fileName) || array === undefined || !ts.isArrayLiteralExpression(array) || call === undefined || !ts.isCallExpression(call)) {
+    return false;
+  }
+  const member = call.expression;
+  return propertyName(member) === "generateKey" && member.expression !== undefined && propertyName(member.expression) === "subtle";
+}
+
+const identityKeyMethods = new Set(["importKey", "generateKey", "exportKey", "sign"]);
 
 function isAllowedImportKey(node, fileName) {
   const object = node.expression;
@@ -247,7 +304,7 @@ function checkAmbient(violations, node, fileName, location) {
   if (ts.isIdentifier(node) && nodeGlobalNames.has(node.text) && !isDeclarationName(node)) {
     add(violations, "node-global", `${location}: ${node.text} is a Node global. Packages do not use Node built-ins.`);
   }
-  if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && sensitiveStrings.has(node.text) && !isReflectionSource(fileName) && !isPropertyKeyOfAccess(node)) {
+  if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && sensitiveStrings.has(node.text) && !isReflectionSource(fileName) && !isPropertyKeyOfAccess(node) && !isAllowedUsageLiteral(node, fileName)) {
     add(violations, "sensitive-name", `${location}: the string "${node.text}" names a crypto, reflection, or runtime member. Write the member directly so the checker can see it.`);
   }
 }
@@ -605,7 +662,7 @@ export function evaluateSource(input) {
     if (accessed === "subtle") {
       checkSubtleAccess(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
     }
-    if (accessed !== undefined && bannedSigningNames.has(accessed) && !(accessed === "importKey" && isAllowedImportKey(node, input.fileName))) {
+    if (accessed !== undefined && bannedSigningNames.has(accessed) && !(identityKeyMethods.has(accessed) && isAllowedImportKey(node, input.fileName))) {
       add(
         violations,
         "signing-api",
@@ -1356,7 +1413,7 @@ export function runSelfTest() {
       "@ix/config",
       [],
     ),
-    "signing-api",
+    "key-export",
   );
 
   cases += 1;
@@ -1379,8 +1436,16 @@ export function runSelfTest() {
     ["verify with another algorithm is rejected", 'await crypto.subtle.verify("ECDSA", key, sig, data);', "verify-algorithm"],
     ["an alias of crypto.subtle is rejected", "const subtle = crypto.subtle;", "subtle-site"],
     ["destructuring crypto.subtle is rejected", "const { verify } = crypto.subtle;", "subtle-site"],
-    ["subtle.sign in identity is rejected", 'await crypto.subtle.sign("Ed25519", key, data);', "signing-api"],
-    ["subtle.generateKey in identity is rejected", 'await crypto.subtle.generateKey("Ed25519", false, ["sign"]);', "signing-api"],
+    ["subtle.sign with a key that is not a pair's private key is rejected", 'await crypto.subtle.sign("Ed25519", key, data);', "sign-algorithm"],
+    ["subtle.sign with another algorithm is rejected", 'await crypto.subtle.sign("ECDSA", pair.privateKey, data);', "sign-algorithm"],
+    ["generateKey for sign only is rejected", 'await crypto.subtle.generateKey("Ed25519", false, ["sign"]);', "key-generate"],
+    ["extractable generateKey is rejected", 'await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);', "key-generate"],
+    ["generateKey of another algorithm is rejected", 'await crypto.subtle.generateKey("ECDSA", false, ["sign", "verify"]);', "key-generate"],
+    ["exporting the private key is rejected", 'await crypto.subtle.exportKey("raw", pair.privateKey);', "key-export"],
+    ["exporting a key as pkcs8 is rejected", 'await crypto.subtle.exportKey("pkcs8", pair.publicKey);', "key-export"],
+    ["exporting as jwk is rejected", 'await crypto.subtle.exportKey("jwk", pair.publicKey);', "key-export"],
+    ["wrapKey in identity is rejected", 'await crypto.subtle.wrapKey("raw", pair.privateKey, key, "AES-KW");', "subtle-site"],
+    ["deriveBits in identity is rejected", 'await crypto.subtle.deriveBits("X25519", pair.privateKey, 256);', "subtle-site"],
   ]) {
     cases += 1;
     assertReason(
@@ -1493,6 +1558,27 @@ export function runSelfTest() {
       [],
     ),
   );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "identity may create a non-extractable Ed25519 pair, export its public key, and sign with it",
+    sourceCase(
+      "/virtual/packages/identity/src/signer.ts",
+      'const pair = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);\nexport const raw = await crypto.subtle.exportKey("raw", pair.publicKey);\nexport const signed = await crypto.subtle.sign("Ed25519", pair.privateKey, new Uint8Array());\n',
+      "@ix/config",
+      [],
+    ),
+  );
+
+  for (const [label, file, pkg, code] of [
+    ["generateKey outside identity is rejected", "/virtual/packages/agents/src/index.ts", "@ix/node", 'export const pair = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);\n'],
+    ["subtle.sign outside identity is rejected", "/virtual/packages/agents/src/index.ts", "@ix/node", 'export const s = await crypto.subtle.sign("Ed25519", pair.privateKey, data);\n'],
+    ["generateKey in an identity test is rejected", "/virtual/packages/identity/test/identity.test.ts", "@ix/config", 'export const pair = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);\n'],
+  ]) {
+    cases += 1;
+    assertReason(failures, label, sourceCase(file, code, pkg, []), "key-site");
+  }
 
   for (const [label, file, pkg] of [
     ["subtle.verify outside identity is rejected", "/virtual/packages/node/src/index.ts", "@ix/node"],

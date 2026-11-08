@@ -3,12 +3,10 @@
 import { spawn } from "node:child_process";
 import {
   jobTag,
-  posterIssuer,
   sampleTermClientMandate,
   sampleTermJob,
   sampleTermWorkerMandate,
   withinLimit,
-  workerIssuer,
 } from "@ix/agents";
 import { verifyTermTranscript } from "@ix/verify";
 
@@ -85,19 +83,29 @@ function waitForListen(child) {
   });
 }
 
+const didLine = /^did (did:key:z[1-9A-HJ-NP-Za-km-z]+)$/m;
+
 function runRole(role, url) {
-  return new Promise((resolve) => {
+  let announce;
+  const did = new Promise((resolve) => {
+    announce = resolve;
+  });
+  const done = new Promise((resolve) => {
     const child = track(
       spawn(process.execPath, ["--import", "tsx", "scripts/local-ix.mjs", role], {
         cwd: process.cwd(),
         env: { ...process.env, IX_URL: url, IX_BIND: loopback },
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
       }),
     );
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
+      const found = didLine.exec(stdout);
+      if (found !== null) {
+        announce({ did: found[1], tell: (peer) => child.stdin.end(`peer ${peer}\n`) });
+      }
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
@@ -106,9 +114,11 @@ function runRole(role, url) {
       resolve({ role, code: 1, stdout, stderr: `${stderr}${error.message}` });
     });
     child.on("exit", (code) => {
+      announce({ did: "", tell: () => undefined });
       resolve({ role, code: code ?? 1, stdout, stderr });
     });
   });
+  return { did, done };
 }
 
 async function readJson(response) {
@@ -150,7 +160,16 @@ try {
   if (health["ok"] !== true || health["bind"] !== loopback || health["signatureVerification"] !== "deferred") {
     throw new Error("health did not report a deferred localhost relay");
   }
-  const [poster, worker] = await Promise.all([runRole("poster", base), runRole("worker", base)]);
+  const posterRun = runRole("poster", base);
+  const workerRun = runRole("worker", base);
+  const [posterId, workerId] = await Promise.all([posterRun.did, workerRun.did]);
+  if (posterId.did === "" || workerId.did === "" || posterId.did === workerId.did) {
+    throw new Error("the roles did not announce two different did:key names");
+  }
+  posterId.tell(workerId.did);
+  workerId.tell(posterId.did);
+  const peers = { client: posterId.did, worker: workerId.did };
+  const [poster, worker] = await Promise.all([posterRun.done, workerRun.done]);
   if (poster.code !== 0 || worker.code !== 0) {
     throw new Error(`poster ${poster.stdout}${poster.stderr} worker ${worker.stdout}${worker.stderr}`);
   }
@@ -187,9 +206,7 @@ try {
   const report = await verifyTermTranscript({
     jobId: sampleTermJob.jobId,
     events,
-    issuers: { client: posterIssuer, worker: workerIssuer },
-    signature: "unverified-placeholder",
-    jws: "unverified-placeholder",
+    issuers: peers,
   });
   if (
     report.schema !== "pass" ||
@@ -197,6 +214,7 @@ try {
     report.replay !== "pass" ||
     report.deadlines !== "pass" ||
     report.chain !== "pass" ||
+    report.signatures !== "pass" ||
     report.phase !== "agreed"
   ) {
     throw new Error(`ix-verify failed: ${report.detail}`);
@@ -207,11 +225,6 @@ try {
       if (limit !== undefined && !withinLimit(limit, term.value)) {
         throw new Error(`agreed ${term.termId} is outside a mandate`);
       }
-    }
-  }
-  for (const check of report.deferred) {
-    if (check.status !== "deferred") {
-      throw new Error("a cryptographic check was not deferred");
     }
   }
   console.log(
@@ -230,7 +243,8 @@ try {
       forks: report.forks,
       phase: report.phase,
       messages: report.messageCount,
-      deferred: report.deferred.map((check) => check.name),
+      signatures: report.signatures,
+      signer: "ed25519-in-memory",
     }),
   );
 } catch (error) {

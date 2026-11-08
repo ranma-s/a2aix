@@ -179,4 +179,10 @@ describe("canonical body hash", () => {
     expect(error.name).toBe("CanonicalHashError");
     expect(error.message).toContain("SHA-256");
   });
+
+  it("builds the event signing input from every field except id and sig", async () => {
+    const { eventSigningInput } = await import("../src/index.js");
+    const event = { id: "x", sig: "y", issuer: "did:key:z", kind: "k", tags: [["t", "v"]] as const, createdAt: "a", expiresAt: "b", body: { b: 1, a: 2 } };
+    expect(eventSigningInput(event)).toBe('{"body":{"a":2,"b":1},"createdAt":"a","expiresAt":"b","issuer":"did:key:z","kind":"k","tags":[["t","v"]]}');
+  });
 });

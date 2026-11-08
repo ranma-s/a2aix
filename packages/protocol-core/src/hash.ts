@@ -17,6 +17,26 @@ export function signingInputExcludingSignature(value: unknown): string {
   return canonicalizeExcludingSignature(value);
 }
 
+export type SignedEventFields = {
+  readonly issuer: string;
+  readonly kind: string;
+  readonly tags: readonly (readonly [string, string])[];
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly body: unknown;
+};
+
+export function eventSigningInput(event: SignedEventFields): string {
+  return canonicalize({
+    issuer: event.issuer,
+    kind: event.kind,
+    tags: event.tags,
+    createdAt: event.createdAt,
+    expiresAt: event.expiresAt,
+    body: event.body,
+  });
+}
+
 export async function hashExcludingSignature(value: unknown): Promise<string> {
   return sha256Hex(new TextEncoder().encode(signingInputExcludingSignature(value)));
 }

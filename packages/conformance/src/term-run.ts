@@ -1,14 +1,17 @@
-import { decodeTermMessage, sameTermValue, signatureVerification, valueHashVerification } from "@ix/a2a-ext-negotiation";
+import { decodeTermMessage, jwsSignatureFormat, sameTermValue, signatureVerification, valueHashVerification } from "@ix/a2a-ext-negotiation";
 import type { FixedTerm, TermJson, TermMessage } from "@ix/a2a-ext-negotiation";
 import type { JsonObject, JsonValue, RelayEventInput, StoredEvent } from "@ix/distribution";
+import type { EphemeralSigner } from "@ix/identity";
+import { eventSigningInput, signingInputExcludingSignature } from "@ix/protocol-core";
 import {
   clockAt,
   createTermSide,
+  createTermSigners,
   jobKind,
   jobTag,
   mockExtensionsHeader,
   negotiationKind,
-  posterIssuer,
+  peersOf,
   redactFreeText,
   runTermRelay,
   sampleTermClientMandate,
@@ -17,9 +20,8 @@ import {
   termInjectionCases,
   termJobAnchor,
   withinLimit,
-  workerIssuer,
 } from "@ix/agents";
-import type { JobBoard, TermInjectionCase, TermJob, TermMandate, TermRelayReport } from "@ix/agents";
+import type { JobBoard, TermInjectionCase, TermJob, TermMandate, TermRelayReport, TermSigners } from "@ix/agents";
 import { verifyTermTranscript } from "@ix/verify";
 
 export type OpenTermBoard = (now: string) => JobBoard;
@@ -78,7 +80,7 @@ function toJson(value: unknown): JsonValue {
   return null;
 }
 
-function run(
+async function run(
   openBoard: OpenTermBoard,
   input: {
     readonly now?: string;
@@ -86,23 +88,39 @@ function run(
     readonly job?: TermJob;
     readonly client?: TermMandate;
     readonly worker?: TermMandate;
-    readonly wrap?: (board: JobBoard) => JobBoard;
-    readonly seed?: (board: JobBoard) => Promise<void>;
+    readonly wrap?: (board: JobBoard, signers: TermSigners) => JobBoard;
+    readonly seed?: (board: JobBoard, signers: TermSigners) => Promise<void>;
   } = {},
 ): Promise<TermRelayReport> {
   const now = input.now ?? termNow;
+  const signers = await createTermSigners();
   const raw = openBoard(now);
-  const board = input.wrap === undefined ? raw : input.wrap(raw);
-  const start = input.seed === undefined ? Promise.resolve() : input.seed(raw);
-  return start.then(() =>
-    runTermRelay({
-      board,
-      clock: input.agentClock ?? clockAt(now),
-      job: input.job ?? sampleTermJob,
-      client: { party: "client", mandate: input.client ?? sampleTermClientMandate, human: "approve" },
-      worker: { party: "worker", mandate: input.worker ?? sampleTermWorkerMandate, human: "approve" },
-    }),
-  );
+  const board = input.wrap === undefined ? raw : input.wrap(raw, signers);
+  if (input.seed !== undefined) {
+    await input.seed(raw, signers);
+  }
+  return runTermRelay({
+    board,
+    clock: input.agentClock ?? clockAt(now),
+    job: input.job ?? sampleTermJob,
+    client: { party: "client", mandate: input.client ?? sampleTermClientMandate, human: "approve" },
+    worker: { party: "worker", mandate: input.worker ?? sampleTermWorkerMandate, human: "approve" },
+    signers,
+  });
+}
+
+async function signedMessage(message: TermJson, signer: EphemeralSigner): Promise<JsonValue> {
+  const plain = toJson(message);
+  if (!isObject(plain)) {
+    return plain;
+  }
+  const material = await signer.signDetached(signingInputExcludingSignature({ ...plain, signature: { verification: jwsSignatureFormat, material: "" } }));
+  return { ...plain, signature: { verification: jwsSignatureFormat, material } };
+}
+
+async function signedEvent(input: Omit<RelayEventInput, "sig" | "issuer">, signer: EphemeralSigner): Promise<RelayEventInput> {
+  const fields = { ...input, issuer: signer.did };
+  return { ...fields, sig: await signer.signDetached(eventSigningInput(fields)) };
 }
 
 function decodedMessages(events: readonly StoredEvent[]): readonly { readonly issuer: string; readonly message: TermMessage }[] {
@@ -150,13 +168,12 @@ async function replayPasses(report: TermRelayReport): Promise<boolean> {
   const verified = await verifyTermTranscript({
     jobId: report.poster.session?.jobId ?? sampleTermJob.jobId,
     events: report.events.map((event) => toJson(event)),
-    issuers: { client: posterIssuer, worker: workerIssuer },
-    signature: "unverified",
-    jws: "unverified",
+    issuers: report.peers,
   });
   return (
     verified.schema === "pass" &&
     verified.issuers === "pass" &&
+    verified.signatures === "pass" &&
     verified.replay === "pass" &&
     verified.deadlines === "pass" &&
     verified.chain === "pass" &&
@@ -229,7 +246,7 @@ function everyMessageInside(report: TermRelayReport, client: TermMandate, worker
     if (message.type !== "TermPropose" && message.type !== "TermCounter" && message.type !== "TermAccept") {
       return true;
     }
-    const mandate = issuer === posterIssuer ? client : worker;
+    const mandate = issuer === report.peers.client ? client : worker;
     const limit = mandate[message.termId];
     return limit === undefined || message.value === undefined || withinLimit(limit, message.value);
   });
@@ -241,8 +258,8 @@ export async function proveTermMandate(openBoard: OpenTermBoard): Promise<TermMa
   const exactPrice = exact.poster.session?.draft?.terms.find((term) => term.termId === "ix:price")?.value;
   const outsideWorker: TermMandate = { ...sampleTermWorkerMandate, "ix:price": { kind: "money-min", currency: "JPY", taxIncluded: true, ask: 200000, min: 180001 } };
   const outside = await run(openBoard, { worker: outsideWorker });
-  const clientPrices = decodedMessages(outside.events).filter(({ issuer }) => issuer === posterIssuer).map(({ message }) => priceOf(message));
-  const workerPrices = decodedMessages(outside.events).filter(({ issuer }) => issuer === workerIssuer).map(({ message }) => priceOf(message));
+  const clientPrices = decodedMessages(outside.events).filter(({ issuer }) => issuer === outside.peers.client).map(({ message }) => priceOf(message));
+  const workerPrices = decodedMessages(outside.events).filter(({ issuer }) => issuer === outside.peers.worker).map(({ message }) => priceOf(message));
   const normal = await run(openBoard);
   return {
     exactEdgeAgreed: exact.poster.session?.phase === "agreed" && sameTermValue(exactPrice, { amount: 180000, currency: "JPY", taxIncluded: true }),
@@ -262,19 +279,21 @@ function countMessages(report: TermRelayReport): number {
   return report.events.filter((event) => event.kind === negotiationKind).length;
 }
 
-async function publishAs(board: JobBoard, id: string, issuer: string, message: TermJson): Promise<void> {
+async function publishAs(board: JobBoard, id: string, signer: EphemeralSigner, message: TermJson): Promise<void> {
   const anchor = await termJobAnchor(sampleTermJob);
   const chained = isObject(message) ? { ...message, prevHash: anchor } : message;
-  const answer = await board.publish({
-    id,
-    issuer,
-    kind: negotiationKind,
-    tags: [[jobTag, sampleTermJob.jobId]],
-    createdAt: termNow,
-    expiresAt: "2026-11-05T00:00:00.000Z",
-    body: { record: "term", extensionsHeader: mockExtensionsHeader, message: toJson(chained) },
-    sig: "unverified",
-  });
+  const event = await signedEvent(
+    {
+      id,
+      kind: negotiationKind,
+      tags: [[jobTag, sampleTermJob.jobId]],
+      createdAt: termNow,
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      body: { record: "term", extensionsHeader: mockExtensionsHeader, message: await signedMessage(chained, signer) },
+    },
+    signer,
+  );
+  const answer = await board.publish(event);
   if (!answer.ok) {
     throw new Error(`seeding ${id} failed: ${answer.detail}`);
   }
@@ -301,9 +320,11 @@ function expiredMessageKeptOut(report: TermRelayReport): boolean {
 
 async function workerReadsJobAt(openBoard: OpenTermBoard, job: TermJob, workerNow: string): Promise<boolean> {
   const board = openBoard(termNow);
-  const poster = createTermSide({ board, clock: clockAt(termNow), jobId: job.jobId, config: { party: "client", mandate: sampleTermClientMandate, human: "approve" }, postJob: job });
+  const signers = await createTermSigners();
+  const peers = peersOf(signers);
+  const poster = createTermSide({ board, clock: clockAt(termNow), jobId: job.jobId, config: { party: "client", mandate: sampleTermClientMandate, human: "approve" }, signer: signers.client, peers, postJob: job });
   await poster.step();
-  const worker = createTermSide({ board, clock: clockAt(workerNow), jobId: job.jobId, config: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" } });
+  const worker = createTermSide({ board, clock: clockAt(workerNow), jobId: job.jobId, config: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" }, signer: signers.worker, peers });
   for (let index = 0; index < 3; index += 1) {
     await worker.step();
   }
@@ -333,8 +354,8 @@ export async function proveTermDeadline(openBoard: OpenTermBoard): Promise<TermD
     (side) => side.session?.phase !== "agreed" && side.refusals.some((reason) => reason.includes("expired")),
   );
   const expired = await run(openBoard, {
-    seed: (board) =>
-      publishAs(board, "u-0001", workerIssuer, {
+    seed: (board, signers) =>
+      publishAs(board, "u-0001", signers.worker, {
         ...envelope,
         expiresAt: "2026-11-03T00:00:00.000Z",
         from: "worker",
@@ -359,15 +380,18 @@ export async function proveTermDeadline(openBoard: OpenTermBoard): Promise<TermD
   };
 }
 
-function noteBoard(board: JobBoard, issuer: string, note: string): JobBoard {
+function noteBoard(board: JobBoard, signer: EphemeralSigner, note: string): JobBoard {
   return {
-    publish(input: RelayEventInput) {
+    async publish(input: RelayEventInput) {
       const body = input.body;
       const message = isObject(body) ? body["message"] : undefined;
-      if (input.issuer !== issuer || !isObject(body) || !isObject(message) || (message["type"] !== "TermPropose" && message["type"] !== "TermCounter")) {
+      if (input.issuer !== signer.did || !isObject(body) || !isObject(message) || (message["type"] !== "TermPropose" && message["type"] !== "TermCounter")) {
         return board.publish(input);
       }
-      return board.publish({ ...input, body: { ...body, message: { ...message, note } } });
+      const noted = await signedMessage({ ...message, note }, signer);
+      return board.publish(
+        await signedEvent({ id: input.id, kind: input.kind, tags: input.tags, createdAt: input.createdAt, expiresAt: input.expiresAt, body: { ...body, message: noted } }, signer),
+      );
     },
     query: (filter) => board.query(filter),
     subscribe: (filter, listener) => board.subscribe(filter, listener),
@@ -455,8 +479,7 @@ async function observe(openBoard: OpenTermBoard, entry: TermInjectionCase): Prom
     }
     case "worker-note":
     case "client-note": {
-      const issuer = entry.place === "worker-note" ? workerIssuer : posterIssuer;
-      const report = await run(openBoard, { wrap: (board) => noteBoard(board, issuer, entry.text) });
+      const report = await run(openBoard, { wrap: (board, signers) => noteBoard(board, entry.place === "worker-note" ? signers.worker : signers.client, entry.text) });
       const messages = decodedMessages(report.events);
       const approvals = messages.filter(({ message }) => message.type === "TermApproval" && message.decision === "approve").length;
       const issuers = new Set(report.events.map((event) => event.issuer));
@@ -479,17 +502,17 @@ async function observe(openBoard: OpenTermBoard, entry: TermInjectionCase): Prom
       if (!agreedInsideBoth(report) || !(await replayPasses(report)) || approvals !== 2 || !currencyKept) {
         return fail("the note changed the agreement, skipped approval, or changed the currency");
       }
-      if ([...issuers].some((value) => value !== posterIssuer && value !== workerIssuer)) {
+      if ([...issuers].some((value) => value !== report.peers.client && value !== report.peers.worker)) {
         return fail("an unexpected issuer appeared");
       }
       if (report.events.some((event) => { const verification: string = event.signatureVerification; return verification !== "deferred"; }) || !noContact(shownEverywhere(report))) {
-        return fail("a signature was treated as verified or a contact reached a human");
+        return fail("the relay claimed to verify a signature it does not check, or a contact reached a human");
       }
       return pass("the note was carried and shown redacted; terms, approvals, issuers, and signatures were unchanged");
     }
     case "decline-reason": {
       const report = await run(openBoard, {
-        seed: (board) => publishAs(board, "u-0001", workerIssuer, { ...envelope, from: "worker", type: "DealDecline", reason: entry.text }),
+        seed: (board, signers) => publishAs(board, "u-0001", signers.worker, { ...envelope, from: "worker", type: "DealDecline", reason: entry.text }),
       });
       return report.poster.session?.phase === "no_deal" && report.poster.session.reason === "declined" && report.worker.session?.phase === "no_deal"
         ? pass("the decline ended the deal on both sides")
@@ -497,8 +520,8 @@ async function observe(openBoard: OpenTermBoard, entry: TermInjectionCase): Prom
     }
     case "added-label": {
       const report = await run(openBoard, {
-        seed: (board) =>
-          publishAs(board, "u-0001", workerIssuer, {
+        seed: (board, signers) =>
+          publishAs(board, "u-0001", signers.worker, {
             ...envelope,
             from: "worker",
             type: "TermAdd",
@@ -510,8 +533,8 @@ async function observe(openBoard: OpenTermBoard, entry: TermInjectionCase): Prom
     }
     case "expired-note": {
       const report = await run(openBoard, {
-        seed: (board) =>
-          publishAs(board, "u-0001", workerIssuer, {
+        seed: (board, signers) =>
+          publishAs(board, "u-0001", signers.worker, {
             ...envelope,
             expiresAt: "2026-11-03T00:00:00.000Z",
             from: "worker",

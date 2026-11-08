@@ -49,7 +49,7 @@ Item 6 `coveredCases`, in order (`termInjectionCases`, run against the term-by-t
 17. `label-cannot-rewrite-terms`
 18. `expired-note-is-not-applied`
 
-Drive records `conformance: "partial-items-3-6-pass-signatures-deferred"`. A green job is that split. It is not a six-item credential and it does not check a signature. The same drive then starts the localhost relay.
+Drive records `conformance: "partial-items-3-6-pass-mock-agent-signatures-checked"`. A green job is that split. It is not a six-item credential. It checks the mock agents' Ed25519 signatures, not human approval signatures. The same drive then starts the localhost relay.
 
 ## Gotchas
 

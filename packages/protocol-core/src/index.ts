@@ -24,6 +24,7 @@ export type {
 export { CanonicalHashError } from "./hash-error.js";
 export {
   canonicalBodyHash,
+  eventSigningInput,
   hashCanonicalBody,
   hashExcludingSignature,
   hashExcludingSignatureJson,
@@ -31,3 +32,4 @@ export {
   signingInputFromJson,
   verifyCanonicalBodyHash,
 } from "./hash.js";
+export type { SignedEventFields } from "./hash.js";

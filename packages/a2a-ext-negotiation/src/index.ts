@@ -2,7 +2,7 @@ import { uri as approvalUri } from "@ix/a2a-ext-approval";
 import { uri as mandateUri } from "@ix/a2a-ext-mandate";
 import { uri as transcriptUri } from "@ix/a2a-ext-transcript";
 
-export { parties, signatureVerification, status, uri } from "./model.js";
+export { jwsSignatureFormat, parties, signatureVerification, status, uri } from "./model.js";
 export type { Clock, Party, UnverifiedSignature } from "./model.js";
 export { ianaZoneNames, tzdbVersion } from "./zones.js";
 export {

@@ -49,10 +49,10 @@ export type ConformanceItemId = (typeof conformanceItems)[number]["id"];
 
 export type ConformanceLimit =
   | "not_run"
-  | "structure_only_signature_unverified"
+  | "structure_only_mock_agent_signatures"
   | "local_numeric_bound_signature_unverified"
   | "injected_clock"
-  | "free_text_ignored_signature_unverified";
+  | "free_text_ignored_mock_agent_signatures";
 
 export type ConformanceResult = {
   readonly id: ConformanceItemId;
@@ -117,9 +117,9 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
     case "messages-match-types":
       return pass(
         item,
-        "structure_only_signature_unverified",
-        "Term-by-term negotiation: sixteen malformed term messages are refused without throwing, a hand-written message decodes, the job is a typed term job, both sides rebuild the same agreement from relay events, and an independent replay of the relay agrees. Every message carries a JCS SHA-256 hash chain (prevHash, valueHash, transcriptHash, agreementHash) that both sides and the replay check. Signatures and JWS are not checked.",
-        "項目を1つずつ確定させる交渉で確かめました。壊れたメッセージ16通を例外なしで断り、手で書いた正しいメッセージは読めます。依頼票は型の項目表です。双方は中継のイベントだけから同じ合意案を作り、中継の記録を別に読み直しても同じ合意になります。どのメッセージも JCS で並べ直した SHA-256 の指紋の鎖（prevHash、valueHash、transcriptHash、agreementHash）でつながり、双方と読み直しがそれを確かめます。署名と JWS は見ていません。",
+        "structure_only_mock_agent_signatures",
+        "Term-by-term negotiation: sixteen malformed term messages are refused without throwing, a hand-written message decodes, the job is a typed term job, both sides rebuild the same agreement from relay events, and an independent replay of the relay agrees. Every message carries a JCS SHA-256 hash chain (prevHash, valueHash, transcriptHash, agreementHash) that both sides and the replay check. Every relay event and every term message carries an Ed25519 detached JWS from the mock agent's in-memory key, which both sides and the replay check against the other party's did:key. Human approval signatures, mandate signatures, and the Agent Card JWS are not checked.",
+        "項目を1つずつ確定させる交渉で確かめました。壊れたメッセージ16通を例外なしで断り、手で書いた正しいメッセージは読めます。依頼票は型の項目表です。双方は中継のイベントだけから同じ合意案を作り、中継の記録を別に読み直しても同じ合意になります。どのメッセージも JCS で並べ直した SHA-256 の指紋の鎖（prevHash、valueHash、transcriptHash、agreementHash）でつながり、双方と読み直しがそれを確かめます。中継のイベントと交渉のメッセージには、模試のエージェントがメモリの中だけの鍵で付けた Ed25519 の JWS 署名があり、双方と読み直しが相手の did:key で確かめます。人間の承認の署名、委任状の署名、Agent Card の JWS は見ていません。",
       );
     case "proposals-stay-inside-mandate":
       return pass(
@@ -132,15 +132,15 @@ function describe(item: (typeof conformanceItems)[number]): ConformanceResult {
       return pass(
         item,
         "injected_clock",
-        "With injected clocks kept separate for the relay and the agents, neither mock negotiates on a job at or after its expiry, a negotiation that reaches the expiry stops and publishes nothing after it, both negotiate before it, and a message published after its own expiry is refused. Signatures are not checked.",
-        "中継と模試に別々の時計を渡して確かめました。依頼票の期限ちょうど、およびそのあとには交渉のメッセージを出さず、交渉の途中で期限になればそこで止まり、期限のあとには何も出しません。期限前には交渉します。期限切れのメッセージは受け付けません。署名は見ていません。",
+        "With injected clocks kept separate for the relay and the agents, neither mock negotiates on a job at or after its expiry, a negotiation that reaches the expiry stops and publishes nothing after it, both negotiate before it, and a message published after its own expiry is refused. The mock agents' message signatures are checked; human approval signatures are not built yet.",
+        "中継と模試に別々の時計を渡して確かめました。依頼票の期限ちょうど、およびそのあとには交渉のメッセージを出さず、交渉の途中で期限になればそこで止まり、期限のあとには何も出しません。期限前には交渉します。期限切れのメッセージは受け付けません。模試のメッセージの署名は確かめます。人間の承認の署名は見ていません。",
       );
     case "ignores-instructions-in-free-text":
       return pass(
         item,
-        "free_text_ignored_signature_unverified",
-        `Executed against the mock agents and the relay: ${caseList()}. Structured fields stayed in force. Signatures and JWS are not checked.`,
-        `模試と中継に対して実行した試験: ${caseList()}。型の項目はそのままです。署名は見ていません。`,
+        "free_text_ignored_mock_agent_signatures",
+        `Executed against the mock agents and the relay: ${caseList()}. Structured fields stayed in force. Mock agent signatures were checked; the seeded messages were signed by the party they name. Human approval signatures are not checked.`,
+        `模試と中継に対して実行した試験: ${caseList()}。型の項目はそのままです。模試の署名は確かめました。差し込んだメッセージは、名乗った当事者の鍵で署名しています。人間の承認の署名は見ていません。`,
         termInjectionCases.map((entry) => entry.id),
       );
   }

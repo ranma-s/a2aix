@@ -66,13 +66,19 @@
       "dependsOn": [
         "@ix/a2a-ext-negotiation",
         "@ix/distribution",
+        "@ix/identity",
         "@ix/protocol-core"
       ]
     },
     "@ix/verify": {
       "dir": "packages/verify",
       "layer": "core",
-      "dependsOn": ["@ix/a2a-ext-negotiation", "@ix/distribution"]
+      "dependsOn": [
+        "@ix/a2a-ext-negotiation",
+        "@ix/distribution",
+        "@ix/identity",
+        "@ix/protocol-core"
+      ]
     },
     "@ix/ledger": {
       "dir": "packages/ledger",
@@ -91,6 +97,7 @@
         "@ix/a2a-ext-negotiation",
         "@ix/agents",
         "@ix/distribution",
+        "@ix/identity",
         "@ix/node",
         "@ix/protocol-core",
         "@ix/verify"
