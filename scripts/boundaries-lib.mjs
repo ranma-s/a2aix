@@ -219,7 +219,43 @@ function isCryptoReference(node) {
 }
 
 const reflectionNames = new Set(["getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getPrototypeOf", "setPrototypeOf", "defineProperty", "defineProperties"]);
-const alwaysBannedMembers = new Set(["constructor", "__proto__", "__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__", "call", "apply", "bind"]);
+const alwaysBannedMembers = new Set(["constructor", "__proto__", "__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__", "call", "apply", "bind", "getBuiltinModule", "binding", "_linkedBinding", "dlopen", "mainModule"]);
+const nodeGlobalNames = new Set(["process", "require", "module", "exports", "Buffer", "__dirname", "__filename"]);
+const sensitiveStrings = new Set([...reflectionNamesList(), "constructor", "__proto__", "__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__", "call", "apply", "bind", "getBuiltinModule", "binding", "_linkedBinding", "dlopen", "mainModule", "process", "crypto", "subtle", "webcrypto", "Function", "eval", "Reflect", "globalThis", ...bannedSigningNames]);
+const allowedAmbientFiles = ["/packages/protocol-core/src/platform.d.ts", "/packages/identity/src/platform.d.ts", "/packages/jcs/src/node-util.d.ts"];
+
+function reflectionNamesList() {
+  return ["getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getPrototypeOf", "setPrototypeOf", "defineProperty", "defineProperties"];
+}
+
+export function isAllowedAmbientFile(fileName) {
+  const normal = normalize(fileName);
+  return allowedAmbientFiles.some((allowed) => normal.endsWith(allowed));
+}
+
+function hasDeclareModifier(node) {
+  return ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword);
+}
+
+function checkAmbient(violations, node, fileName, location) {
+  if (isAllowedAmbientFile(fileName)) {
+    return;
+  }
+  if (hasDeclareModifier(node) || (ts.isModuleDeclaration(node) && node.name.kind === ts.SyntaxKind.Identifier && node.name.text === "global")) {
+    add(violations, "ambient-declaration", `${location}: declare adds globals the type check would otherwise reject. Only the reviewed platform.d.ts files may declare globals.`);
+  }
+  if (ts.isIdentifier(node) && nodeGlobalNames.has(node.text) && !isDeclarationName(node)) {
+    add(violations, "node-global", `${location}: ${node.text} is a Node global. Packages do not use Node built-ins.`);
+  }
+  if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && sensitiveStrings.has(node.text) && !isReflectionSource(fileName) && !isPropertyKeyOfAccess(node)) {
+    add(violations, "sensitive-name", `${location}: the string "${node.text}" names a crypto, reflection, or runtime member. Write the member directly so the checker can see it.`);
+  }
+}
+
+function isPropertyKeyOfAccess(node) {
+  const parent = node.parent;
+  return parent !== undefined && ts.isElementAccessExpression(parent) && parent.argumentExpression === node;
+}
 const globalNames = new Set(["globalThis", "global"]);
 
 function isDeclarationName(node) {
@@ -504,6 +540,10 @@ export function evaluateSource(input) {
   };
   const jcsImplementation = isJcsImplementation(input.fileName);
 
+  if (input.fileName.endsWith(".d.ts") && !isAllowedAmbientFile(input.fileName)) {
+    add(violations, "ambient-declaration", `${normalize(input.fileName)}: a new .d.ts file can declare globals. Only the reviewed platform.d.ts files are allowed.`);
+  }
+
   function visit(node) {
     const specifier = moduleSpecifierText(node) ?? isRequireCall(node);
     if (specifier !== undefined) {
@@ -560,6 +600,7 @@ export function evaluateSource(input) {
     }
     checkDynamicEscapes(violations, node, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
     checkReflection(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
+    checkAmbient(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
     const accessed = propertyName(node);
     if (accessed === "subtle") {
       checkSubtleAccess(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
@@ -1393,6 +1434,41 @@ export function runSelfTest() {
       reason,
     );
   }
+
+  for (const [label, code, reason] of [
+    ["process.getBuiltinModule is rejected", 'const web = process.getBuiltinModule("crypto").webcrypto;', "node-global"],
+    ["process.binding is rejected", 'const b = process.binding("crypto");', "node-global"],
+    ["declare const in a source file is rejected", "declare const process: { readonly env: object };", "ambient-declaration"],
+    ["declare global is rejected", "declare global { const leak: number; }", "ambient-declaration"],
+    ["a built constructor key through a const is rejected", 'const k = "constructor" as const;', "sensitive-name"],
+    ["a reflection method name as a string is rejected", 'const k = "getOwnPropertyDescriptor" as const;', "sensitive-name"],
+    ["a signing method name as a string is rejected", 'const k = "generateKey";', "sensitive-name"],
+    ["the crypto name as a string is rejected", 'const k = "crypto";', "sensitive-name"],
+    ["require as a value is rejected", "const r = require;", "node-global"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase("/virtual/packages/identity/src/signature.ts", `${code}\n`, "@ix/config", []),
+      reason,
+    );
+  }
+
+  cases += 1;
+  assertReason(
+    failures,
+    "a new .d.ts file is rejected",
+    sourceCase("/virtual/packages/identity/src/zz-env.d.ts", "interface Leak { readonly a: number; }\n", "@ix/config", []),
+    "ambient-declaration",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "the reviewed platform.d.ts may declare globals",
+    sourceCase("/virtual/packages/identity/src/platform.d.ts", "declare const TextDecoder: { new (): object };\n", "@ix/config", []),
+  );
 
   cases += 1;
   assertClean(
