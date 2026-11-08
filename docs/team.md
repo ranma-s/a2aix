@@ -26,7 +26,7 @@ Cursor のクラウドエージェントです。チケット単位で実装し�
 
 いまの状態です。下にある「署名の空席」の節は、その時点の記録として残しています。
 
-模試の発注側と受注側は、実行のたびにメモリの中だけで Ed25519 の鍵を作ります。鍵は取り出せず、保存もしません。中継に出すイベントの `sig` と、交渉のメッセージの `signature` に、本文を切り離した JWS で署名します。双方と `@ix/verify` は、相手の `did:key` でそれを確かめ、合わないものは受け付けません。中継そのものは確かめずに保管します（`signatureVerification` は `deferred` のまま）。イベントの `id` はまだ仮の値です。どの `did:key` が誰のものかは、委任状ができるまで外から教えます。人間の承認は台本のままで、承認アプリは署名を拒否します（パスキーは段階3）。
+模試の発注側と受注側は、実行のたびにメモリの中だけで Ed25519 の鍵を作ります。鍵は取り出せず、保存もしません。中継に出すイベントの `sig` と、交渉のメッセージの `signature` に、本文を切り離した JWS で署名します。双方と `@ix/verify` は、相手の `did:key` でそれを確かめ、合わないものは受け付けません。中継そのものは確かめずに保管します（`signatureVerification` は `deferred` のまま）。イベントの `id` はまだ仮の値です。どの `did:key` が誰のものかは、委任状ができるまで外から教えます。人間の承認は台本のままで、承認アプリは署名を拒否します（段階3では、人間の承認は、その人自身の `did:key` で作る本文を切り離した EdDSA の JWS です。その `did:key` は同じ側のエージェントのものと違うこと。鍵の持ち方（パスキー、ウォレット、会社の仕組み）はプロトコルの外です。D06）。
 
 ## 署名の空席（T09・T10）
 
@@ -91,7 +91,7 @@ On 2026-11-07 the director acted as the security reviewer and chose every recomm
 
 This is the current state. The "Signature placeholders" sections below are kept as records of their time.
 
-The mock poster and worker each make an Ed25519 key in memory per run. The key cannot be exported and is never stored. They sign every relay event `sig` and every term message `signature` as a detached JWS. Both sides and `@ix/verify` check them against the other party's `did:key` and refuse what does not verify. The relay stores events without checking (`signatureVerification` stays `deferred`). Event `id` is still a placeholder. Which person owns a `did:key` is told from outside until mandates exist. Human approval is still scripted and the approval app still refuses to sign (passkeys are stage 3).
+The mock poster and worker each make an Ed25519 key in memory per run. The key cannot be exported and is never stored. They sign every relay event `sig` and every term message `signature` as a detached JWS. Both sides and `@ix/verify` check them against the other party's `did:key` and refuse what does not verify. The relay stores events without checking (`signatureVerification` stays `deferred`). Event `id` is still a placeholder. Which person owns a `did:key` is told from outside until mandates exist. Human approval is still scripted and the approval app still refuses to sign (in stage 3, a human approval is a detached EdDSA JWS made with that human's own `did:key`, which must differ from the party's agent `did:key`; how the key is held, whether passkey, wallet, or company system, is outside the protocol, D06).
 
 ## Signature placeholders in T11 and T14
 

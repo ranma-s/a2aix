@@ -100,7 +100,7 @@ D01 で決めた範囲に合わせます。
 | 項目 | 決めたこと |
 | --- | --- |
 | エージェントの署名 | 案 A：JWS、`alg: EdDSA`（Ed25519）、本文を切り離した compact 形式。ヘッダーは `alg` と `kid` だけ |
-| 人間の承認 | 案 A：パスキー（WebAuthn）。`agreementHash` を確認用の値にする |
+| 人間の承認 | ~~案 A：パスキー（WebAuthn）~~ 2026-11-08 に D06 で置き換え（第12節）。人間自身の `did:key` で作る、本文を切り離した EdDSA の JWS |
 | 試験の身元 | `did:key` |
 | テスト鍵 | 段階1は RFC 8037 の見本の公開鍵と署名だけ（秘密鍵は入れない）。段階2からはテストの実行中にだけ作り、ファイルに残さない |
 | 失効 | 試験の間は範囲外。公開の前に作る |
@@ -114,5 +114,16 @@ D01 で決めた範囲に合わせます。
 | --- | --- |
 | 1. 検証だけ | 済み（PR #21、T24〜T24d） |
 | 2. 模試のエージェントの署名（S1 と S3） | 済み（T25）。鍵は実行ごとにメモリの中だけで作り、取り出せない。中継のイベントと交渉のメッセージに署名し、エージェントと `@ix/verify` が相手の `did:key` で確かめる。イベントの `id` はまだ仮の値。 |
-| 3. 人間の承認（パスキー） | まだ |
+| 3. 人間の承認（人間自身の `did:key` による JWS、D06） | まだ。決まりは第12節 |
 | 4. 中継の受領印 | まだ |
+
+## 12. 人間の承認の決まり（2026-11-08、D06）
+
+ディレクターが、D04 の「人間の承認はパスキー」を次の決まりに置き換えました。
+
+- 人間の承認は `TermApproval` で、その `signature` は、その人自身の `did:key` で作る、本文を切り離した EdDSA（Ed25519）の JWS です。ヘッダーは `alg` と `kid` だけ（D04 と同じ）。
+- その `did:key` は、同じ側のエージェントの `did:key` と違っていなければなりません。同じなら、承認として受け付けません。
+- 人がその鍵をどう持つか（パスキー、ウォレット、会社の仕組みなど）は、プロトコルの外です。
+- 中継の受領印（段階4）は後回しにします。時刻は、これまでどおり送り手の申告です（T25c）。
+
+English: A human approval is a `TermApproval` whose `signature` is a detached EdDSA JWS made with that human's own `did:key`, which must differ from the same party's agent `did:key`. How a person holds the key (passkey, wallet, company system) is outside the protocol. Relay receipts (stage 4) are deferred; time stays the sender's declaration (T25c).

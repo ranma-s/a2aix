@@ -36,6 +36,6 @@ An A2A extension for job exchange. Two agents (a poster and a worker) negotiate 
 
 ## Open items
 
-- Stage 3: human approval as a detached JWS by the human's own `did:key`, not the agent's key. How a person holds the key (passkey, wallet, company system) is outside the protocol.
-- After stage 3, write one short standard document in English and Japanese. Stage 4 (relay receipts) is deferred.
+- Stage 3 (decided in D06, not built): a human approval is a `TermApproval` whose `signature` is a detached EdDSA JWS made with that human's own `did:key`, which must differ from the same party's agent `did:key`. How a person holds the key (passkey, wallet, company system) is outside the protocol. This replaces D04's passkey choice.
+- After stage 3, write one short standard document in English and Japanese. Stage 4 (relay receipts) is deferred; time stays the sender's declaration (T25c).
 - PR #4 (public docs) and PR #11 wait on the director.
