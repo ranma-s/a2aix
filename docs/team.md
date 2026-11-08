@@ -22,6 +22,12 @@ Cursor のクラウドエージェントです。チケット単位で実装し�
 
 署名、鍵、委任範囲（mandate）、承認（approval）に触れる作業の前に入れます。JCS の実装、ハッシュの方式、透明性ログの記録形式も、この人の確認が要ります。開発環境と CI に本物の鍵は置きません。テスト鍵も、このレビューの前には作りません。
 
+## 署名の段階2（T25）
+
+いまの状態です。下にある「署名の空席」の節は、その時点の記録として残しています。
+
+模試の発注側と受注側は、実行のたびにメモリの中だけで Ed25519 の鍵を作ります。鍵は取り出せず、保存もしません。中継に出すイベントの `sig` と、交渉のメッセージの `signature` に、本文を切り離した JWS で署名します。双方と `@ix/verify` は、相手の `did:key` でそれを確かめ、合わないものは受け付けません。中継そのものは確かめずに保管します（`signatureVerification` は `deferred` のまま）。イベントの `id` はまだ仮の値です。どの `did:key` が誰のものかは、委任状ができるまで外から教えます。人間の承認は台本のままで、承認アプリは署名を拒否します（パスキーは段階3）。
+
 ## 署名の空席（T09・T10）
 
 拡張ヘッダーと、依頼票の掲載・検索・購読は、署名を確かめません。依頼票の `sig` は空席です。プログラムは `signatureVerification` を `deferred` と記録し、中身を見ません。`id` も、正規化した本文のハッシュとしては計算しません。呼び出し側が渡した文字列を、そのまま保管します。
@@ -80,6 +86,12 @@ On 2026-11-03 the director acted as the security reviewer and merged PR #3 (RFC 
 ## Signature design review (D04)
 
 On 2026-11-07 the director acted as the security reviewer and chose every recommended option in the signature design draft (PR #20, [`spec/signature-design-draft.md`](spec/signature-design-draft.md)): Ed25519 for agent signatures, passkeys for human approvals, detached JWS with only `alg` and `kid` in the header, and `did:key` for the trial. Stage 1 tests carry only the public key and signature of the published RFC 8037 sample, never its private key. From stage 2, tests create keys only while they run. Revocation is built before public release. Time is backed by relay receipts in stage 4. The director also checks each stage's behavior before it merges. The director does not review code line by line, so an engineering security reviewer looks again before public release.
+
+## Signature stage 2 (T25)
+
+This is the current state. The "Signature placeholders" sections below are kept as records of their time.
+
+The mock poster and worker each make an Ed25519 key in memory per run. The key cannot be exported and is never stored. They sign every relay event `sig` and every term message `signature` as a detached JWS. Both sides and `@ix/verify` check them against the other party's `did:key` and refuse what does not verify. The relay stores events without checking (`signatureVerification` stays `deferred`). Event `id` is still a placeholder. Which person owns a `did:key` is told from outside until mandates exist. Human approval is still scripted and the approval app still refuses to sign (passkeys are stage 3).
 
 ## Signature placeholders in T11 and T14
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createEphemeralSigner,
   base58btcDecode,
   base58btcEncode,
   base64UrlDecode,
@@ -61,7 +62,7 @@ function rfcKey(): Uint8Array {
 
 describe("identity", () => {
   it("verifies but never creates keys or signatures", () => {
-    expect(keyHandling).toBe("verify-only");
+    expect(keyHandling).toBe("ephemeral-in-memory");
     expect(() => refuseKeyOperation("generate")).toThrow(/security reviewer/);
   });
 
@@ -155,6 +156,21 @@ describe("identity", () => {
     expect(lone.ok ? "" : lone.reason).toMatch(/well-formed/);
     const bom = await verifyDetachedJws({ jws: `${header(`\uFEFF{"alg":"EdDSA","kid":"${sampleDid}"}`)}..${rfc8037Signature}`, payload: "x", expectedKid: sampleDid });
     expect(bom.ok ? "" : bom.reason).toMatch(/not JSON/);
+  });
+
+  it("signs with an in-memory key that verifies only for its own did and payload", async () => {
+    const signer = await createEphemeralSigner();
+    const other = await createEphemeralSigner();
+    expect(signer.did).not.toBe(other.did);
+    expect(ed25519FromDidKey(signer.did)).toBeDefined();
+    const jws = await signer.signDetached(samplePayload);
+    expect(jws.split(".")[1]).toBe("");
+    expect(await verifyDetachedJws({ jws, payload: samplePayload, expectedKid: signer.did })).toEqual({ ok: true, kid: signer.did });
+    expect((await verifyDetachedJws({ jws, payload: `${samplePayload} `, expectedKid: signer.did })).ok).toBe(false);
+    expect((await verifyDetachedJws({ jws, payload: samplePayload, expectedKid: other.did })).ok).toBe(false);
+    const forged = `${(await other.signDetached(samplePayload)).split("..")[0] ?? ""}..${jws.split("..")[1] ?? ""}`;
+    expect((await verifyDetachedJws({ jws: forged, payload: samplePayload, expectedKid: other.did })).ok).toBe(false);
+    await expect(signer.signDetached("x\uD800")).rejects.toThrow(/well-formed/);
   });
 
   it("encodes and decodes base64url and base58btc strictly", () => {

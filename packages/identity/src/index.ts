@@ -1,4 +1,4 @@
-export const keyHandling = "verify-only" as const;
+export const keyHandling = "ephemeral-in-memory" as const;
 
 export type PublicIdentityRef = {
   readonly did: string;
@@ -22,3 +22,5 @@ export {
   verifyEd25519,
 } from "./signature.js";
 export type { DetachedJwsResult } from "./signature.js";
+export { createEphemeralSigner } from "./signer.js";
+export type { EphemeralSigner } from "./signer.js";

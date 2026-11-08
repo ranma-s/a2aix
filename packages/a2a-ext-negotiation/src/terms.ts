@@ -1,5 +1,5 @@
 import type { Clock, Party, UnverifiedSignature } from "./model.js";
-import { signatureVerification } from "./model.js";
+import { jwsSignatureFormat, signatureVerification } from "./model.js";
 import { ianaZoneNames } from "./zones.js";
 
 export type TermJson =
@@ -758,8 +758,8 @@ export function applyTermMessage(session: TermSession, message: TermMessage, clo
     return refuse(shape);
   }
   const verification: string = message.signature.verification;
-  if (verification !== signatureVerification) {
-    return refuse("signature verification is deferred");
+  if (verification !== signatureVerification && verification !== jwsSignatureFormat) {
+    return refuse("the signature format is not known");
   }
   if (session.phase === "agreed" || session.phase === "no_deal") {
     return refuse(`negotiation is ${session.phase}`);
@@ -1348,7 +1348,9 @@ export function decodeTermMessage(input: unknown): TermDecodeResult {
   }
   const from: Party | undefined = raw["from"] === "client" ? "client" : raw["from"] === "worker" ? "worker" : undefined;
   const signature = raw["signature"];
-  if (from === undefined || !isLoose(signature) || signature["verification"] !== signatureVerification) {
+  const format = isLoose(signature) ? signature["verification"] : undefined;
+  const verification = format === signatureVerification ? signatureVerification : format === jwsSignatureFormat ? jwsSignatureFormat : undefined;
+  if (from === undefined || !isLoose(signature) || verification === undefined) {
     return { ok: false, reason: "from or signature is not acceptable" };
   }
   const envelope: Envelope = {
@@ -1356,7 +1358,7 @@ export function decodeTermMessage(input: unknown): TermDecodeResult {
     sentAt: looseText(raw, "sentAt"),
     expiresAt: looseText(raw, "expiresAt"),
     prevHash: looseText(raw, "prevHash"),
-    signature: { verification: signatureVerification, material: looseText(signature, "material") },
+    signature: { verification, material: looseText(signature, "material") },
   };
   const termId = looseText(raw, "termId");
   const note = raw["note"];

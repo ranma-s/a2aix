@@ -17,6 +17,9 @@ importers:
       '@ix/agents':
         specifier: workspace:*
         version: link:packages/agents
+      '@ix/jcs':
+        specifier: workspace:*
+        version: link:packages/jcs
       '@ix/verify':
         specifier: workspace:*
         version: link:packages/verify
@@ -95,6 +98,9 @@ importers:
       '@ix/distribution':
         specifier: workspace:*
         version: link:../distribution
+      '@ix/identity':
+        specifier: workspace:*
+        version: link:../identity
       '@ix/protocol-core':
         specifier: workspace:*
         version: link:../protocol-core
@@ -118,6 +124,9 @@ importers:
       '@ix/distribution':
         specifier: workspace:*
         version: link:../distribution
+      '@ix/identity':
+        specifier: workspace:*
+        version: link:../identity
       '@ix/node':
         specifier: workspace:*
         version: link:../node
@@ -169,6 +178,12 @@ importers:
       '@ix/distribution':
         specifier: workspace:*
         version: link:../distribution
+      '@ix/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@ix/protocol-core':
+        specifier: workspace:*
+        version: link:../protocol-core
 
 packages:
 

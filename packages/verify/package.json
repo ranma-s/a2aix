@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@ix/a2a-ext-negotiation": "workspace:*",
-    "@ix/distribution": "workspace:*"
+    "@ix/distribution": "workspace:*",
+    "@ix/identity": "workspace:*",
+    "@ix/protocol-core": "workspace:*"
   }
 }

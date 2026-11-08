@@ -1,7 +1,8 @@
-import { applyChainedTermMessage, coreSheet, decodeTermMessage, expectedPrevHash, openTermSession, presetChainProblem, termHash, termSheetHash, webSiteSheet } from "@ix/a2a-ext-negotiation";
+import { applyChainedTermMessage, coreSheet, decodeTermMessage, expectedPrevHash, jwsSignatureFormat, openTermSession, presetChainProblem, termHash, termSheetHash, webSiteSheet } from "@ix/a2a-ext-negotiation";
 import type { FixedTerm, Party, PresetTerm, TermJson, TermMessage, TermSession, TermSheet } from "@ix/a2a-ext-negotiation";
 import type { JsonObject, JsonValue } from "@ix/distribution";
-import { deferredChecks } from "./deferred.js";
+import { verifyDetachedJws } from "@ix/identity";
+import { eventSigningInput, signingInputExcludingSignature } from "@ix/protocol-core";
 
 export type TermVerifyReport = {
   readonly schema: "pass" | "fail";
@@ -9,13 +10,67 @@ export type TermVerifyReport = {
   readonly replay: "pass" | "fail";
   readonly deadlines: "pass" | "fail";
   readonly chain: "pass" | "fail";
+  readonly signatures: "pass" | "fail";
   readonly forks: number;
+  readonly duplicates: number;
   readonly phase: string;
   readonly messageCount: number;
   readonly terms: readonly FixedTerm[];
   readonly detail: string;
-  readonly deferred: ReturnType<typeof deferredChecks>;
 };
+
+function eventTags(value: JsonValue | undefined): readonly (readonly [string, string])[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items: readonly JsonValue[] = value;
+  const tags: (readonly [string, string])[] = [];
+  for (const item of items) {
+    if (!Array.isArray(item)) {
+      return undefined;
+    }
+    const pair: readonly JsonValue[] = item;
+    const [name, tagValue] = pair;
+    if (pair.length !== 2 || typeof name !== "string" || typeof tagValue !== "string") {
+      return undefined;
+    }
+    tags.push([name, tagValue]);
+  }
+  return tags;
+}
+
+function signedContentOf(event: JsonObject, issuer: string): string {
+  return eventSigningInput({
+    issuer,
+    kind: text(event, "kind") ?? "",
+    tags: eventTags(event["tags"]) ?? [],
+    createdAt: text(event, "createdAt") ?? "",
+    expiresAt: text(event, "expiresAt") ?? "",
+    body: event["body"],
+  });
+}
+
+async function eventSignatureProblem(event: JsonObject, issuer: string): Promise<string | undefined> {
+  const kind = text(event, "kind");
+  const createdAt = text(event, "createdAt");
+  const expiresAt = text(event, "expiresAt");
+  const sig = text(event, "sig");
+  const tags = eventTags(event["tags"]);
+  if (kind === undefined || createdAt === undefined || expiresAt === undefined || sig === undefined || tags === undefined) {
+    return "the event is missing a signed field";
+  }
+  const checked = await verifyDetachedJws({ jws: sig, payload: eventSigningInput({ issuer, kind, tags, createdAt, expiresAt, body: event["body"] }), expectedKid: issuer });
+  return checked.ok ? undefined : checked.reason;
+}
+
+async function messageSignatureProblem(raw: JsonValue | undefined, message: TermMessage, kid: string): Promise<string | undefined> {
+  const verification: string = message.signature.verification;
+  if (verification !== jwsSignatureFormat) {
+    return "the message is not signed";
+  }
+  const checked = await verifyDetachedJws({ jws: message.signature.material, payload: signingInputExcludingSignature(raw), expectedKid: kid });
+  return checked.ok ? undefined : checked.reason;
+}
 
 const verifiableSheets: readonly TermSheet[] = [coreSheet, webSiteSheet];
 
@@ -69,15 +124,23 @@ async function openFromJob(body: JsonObject, jobId: string): Promise<TermSession
   return opened.ok ? opened.session : opened.reason;
 }
 
+export type TermRelayProfile = {
+  readonly jobKind: string;
+  readonly negotiationKind: string;
+  readonly jobTag: string;
+  readonly extensionsHeader: string;
+};
+
 export async function verifyTermTranscript(input: {
   readonly jobId: string;
   readonly events: readonly JsonValue[];
   readonly issuers: { readonly client: string; readonly worker: string };
-  readonly signature: string;
-  readonly jws: string;
+  readonly profile: TermRelayProfile;
 }): Promise<TermVerifyReport> {
-  const deferred = deferredChecks({ signature: input.signature, jws: input.jws });
   const problems: string[] = [];
+  const seen = new Set<string>();
+  let duplicates = 0;
+  let signatures: "pass" | "fail" = "pass";
   let schema: "pass" | "fail" = "pass";
   let issuers: "pass" | "fail" = "pass";
   let replay: "pass" | "fail" = "pass";
@@ -95,7 +158,34 @@ export async function verifyTermTranscript(input: {
     const body = event["body"];
     const issuer = text(event, "issuer");
     const createdAt = text(event, "createdAt") ?? "";
-    if (body["record"] === "term-job") {
+    const kind = text(event, "kind");
+    const tagged = eventTags(event["tags"])?.some(([name, value]) => name === input.profile.jobTag && value === input.jobId) ?? false;
+    if (!tagged || (kind !== input.profile.jobKind && kind !== input.profile.negotiationKind)) {
+      continue;
+    }
+    if (issuer === undefined || (issuer !== input.issuers.client && issuer !== input.issuers.worker)) {
+      issuers = "fail";
+      problems.push(`an event from ${issuer ?? "nobody"} is from neither party`);
+      continue;
+    }
+    const eventProblem = await eventSignatureProblem(event, issuer);
+    if (eventProblem !== undefined) {
+      signatures = "fail";
+      problems.push(`an event from ${issuer}: event signature: ${eventProblem}`);
+      continue;
+    }
+    const signedContent = signedContentOf(event, issuer);
+    if (seen.has(signedContent)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(signedContent);
+    if (kind === input.profile.jobKind) {
+      if (body["record"] !== "term-job") {
+        schema = "fail";
+        problems.push("a job event does not carry a term job record");
+        continue;
+      }
       if (issuer !== input.issuers.client) {
         issuers = "fail";
         problems.push("a job record was not issued by the client");
@@ -115,7 +205,9 @@ export async function verifyTermTranscript(input: {
       }
       continue;
     }
-    if (body["record"] !== "term") {
+    if (body["record"] !== "term" || body["extensionsHeader"] !== input.profile.extensionsHeader) {
+      schema = "fail";
+      problems.push("a negotiation event is not a term record that activates negotiation");
       continue;
     }
     count += 1;
@@ -129,6 +221,12 @@ export async function verifyTermTranscript(input: {
     if (issuer !== input.issuers[from]) {
       issuers = "fail";
       problems.push(`message ${String(count)}: issuer does not match ${from}`);
+      continue;
+    }
+    const messageProblem = await messageSignatureProblem(body["message"], decoded.message, input.issuers[from]);
+    if (messageProblem !== undefined) {
+      signatures = "fail";
+      problems.push(`message ${String(count)}: message signature: ${messageProblem}`);
       continue;
     }
     if (Number.isNaN(Date.parse(createdAt)) || Date.parse(decoded.message.expiresAt) <= Date.parse(createdAt)) {
@@ -207,11 +305,12 @@ export async function verifyTermTranscript(input: {
     replay,
     deadlines,
     chain,
+    signatures,
     forks,
+    duplicates,
     phase: session?.phase ?? "",
     messageCount: count,
     terms: session?.draft?.terms ?? [],
     detail: problems[0] ?? "",
-    deferred,
   };
 }

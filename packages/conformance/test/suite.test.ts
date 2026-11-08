@@ -28,7 +28,7 @@ describe("conformance suite", () => {
     ]);
   });
 
-  it("passes items 3 to 6 without a signature check and leaves the card and header pending", async () => {
+  it("passes items 3 to 6 with mock agent signatures checked and leaves the card and header pending", async () => {
     const results = await runConformance((now) =>
       createRelay({
         mode: "open",
@@ -39,10 +39,10 @@ describe("conformance suite", () => {
     expect(results.map((result) => [result.id, result.status, result.limit])).toEqual([
       ["agent-card-declares-extensions", "pending", "not_run"],
       ["extensions-header-echo", "pending", "not_run"],
-      ["messages-match-types", "pass", "structure_only_signature_unverified"],
+      ["messages-match-types", "pass", "structure_only_mock_agent_signatures"],
       ["proposals-stay-inside-mandate", "pass", "local_numeric_bound_signature_unverified"],
       ["responds-within-deadline", "pass", "injected_clock"],
-      ["ignores-instructions-in-free-text", "pass", "free_text_ignored_signature_unverified"],
+      ["ignores-instructions-in-free-text", "pass", "free_text_ignored_mock_agent_signatures"],
     ]);
     for (const result of results) {
       if (result.status === "pass") {

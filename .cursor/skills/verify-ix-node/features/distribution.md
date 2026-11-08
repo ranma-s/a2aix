@@ -9,7 +9,7 @@
 - Subscribe to events published after the subscription. Stored events are not replayed.
 - `open` accepts public publish. `closed` refuses it.
 - Unknown kinds and tags are stored.
-- `id` and `sig` are the caller’s strings. `signatureVerification` is `deferred`.
+- `id` is the caller’s string. `sig` is the issuer's detached EdDSA JWS over `eventSigningInput`; the relay stores it without checking and reports `signatureVerification: deferred`. The agents and ix-verify check it.
 
 ## How to get to it (user POV)
 

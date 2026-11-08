@@ -2,9 +2,12 @@
 
 import { createServer } from "node:http";
 import { createLocalRelay } from "@ix/adapters";
+import { parseJson } from "@ix/jcs";
 import {
   clockAt,
   createTermSide,
+  createTermSigner,
+  createTermSigners,
   runTermRelay,
   sampleNow,
   sampleTermClientMandate,
@@ -117,7 +120,7 @@ async function postJson(url, payload) {
   const text = await response.text();
   let parsed;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseJson(text);
   } catch (error) {
     throw new Error("invalid json", { cause: error });
   }
@@ -217,7 +220,7 @@ async function handle(req, res, relay) {
   }
   let parsed;
   try {
-    parsed = JSON.parse(text.length === 0 ? "{}" : text);
+    parsed = parseJson(text.length === 0 ? "{}" : text);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid json";
     send(res, 400, { ok: false, reason: "bad_body", detail: message });
@@ -238,11 +241,42 @@ async function handle(req, res, relay) {
   send(res, 200, result);
 }
 
+const didPattern = /^did:key:z[1-9A-HJ-NP-Za-km-z]+$/;
+
+function readPeer() {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const timer = setTimeout(() => {
+      reject(new Error("no peer did arrived on stdin"));
+    }, 10000);
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => {
+      buffer += chunk;
+      const line = buffer.split("\n")[0] ?? "";
+      if (!buffer.includes("\n")) {
+        return;
+      }
+      clearTimeout(timer);
+      process.stdin.pause();
+      const did = line.startsWith("peer ") ? line.slice("peer ".length).trim() : "";
+      if (didPattern.test(did)) {
+        resolve(did);
+      } else {
+        reject(new Error("the peer line is not a did:key"));
+      }
+    });
+  });
+}
+
 async function runRole(role) {
   const base = process.env.IX_URL ?? "http://127.0.0.1:8787";
   await waitForHealth(`${base}/health`);
   const board = httpBoard(base);
   const clock = clockAt(readNow());
+  const signer = await createTermSigner();
+  console.log(`did ${signer.did}`);
+  const peer = await readPeer();
+  const peers = role === "poster" ? { client: signer.did, worker: peer } : { client: peer, worker: signer.did };
   const side =
     role === "poster"
       ? createTermSide({
@@ -250,6 +284,8 @@ async function runRole(role) {
           clock,
           jobId: sampleTermJob.jobId,
           config: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
+          signer,
+          peers,
           postJob: sampleTermJob,
         })
       : createTermSide({
@@ -257,6 +293,8 @@ async function runRole(role) {
           clock,
           jobId: sampleTermJob.jobId,
           config: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
+          signer,
+          peers,
         });
   for (let index = 0; index < 400; index += 1) {
     await side.step();
@@ -284,6 +322,7 @@ async function exchange() {
     job: sampleTermJob,
     client: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
     worker: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
+    signers: await createTermSigners(),
   });
   const posterPhase = report.poster.session?.phase ?? "none";
   const workerPhase = report.worker.session?.phase ?? "none";

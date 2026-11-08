@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   clockAt,
   createTermSide,
+  createTermSigners,
+  peersOf,
   jobKind,
   jobTag,
   runTermRelay,
@@ -27,6 +29,7 @@ describe("relay trial", () => {
       job: sampleTermJob,
       client: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
       worker: { party: "worker", mandate: sampleTermWorkerMandate, human: "approve" },
+      signers: await createTermSigners(),
     });
     expect(report.poster.session?.phase).toBe("agreed");
     expect(report.worker.session?.phase).toBe("agreed");
@@ -42,11 +45,14 @@ describe("relay trial", () => {
   it("refuses the poster when the relay is closed", async () => {
     const clock = clockAt(sampleNow);
     const relay = createLocalRelay({ mode: "closed", clock });
+    const signers = await createTermSigners();
     const poster = createTermSide({
       board: relay,
       clock,
       jobId: sampleTermJob.jobId,
       config: { party: "client", mandate: sampleTermClientMandate, human: "approve" },
+      signer: signers.client,
+      peers: peersOf(signers),
       postJob: sampleTermJob,
     });
     await poster.step();
