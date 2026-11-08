@@ -218,6 +218,61 @@ function isCryptoReference(node) {
   return propertyName(node) === "crypto";
 }
 
+const reflectionNames = new Set(["getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getPrototypeOf", "setPrototypeOf", "defineProperty", "defineProperties"]);
+const alwaysBannedMembers = new Set(["constructor", "__proto__", "__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__", "call", "apply", "bind"]);
+const globalNames = new Set(["globalThis", "global"]);
+
+function isDeclarationName(node) {
+  const parent = node.parent;
+  if (parent === undefined) {
+    return false;
+  }
+  if (ts.isPropertyAccessExpression(parent) && parent.name === node) {
+    return true;
+  }
+  return (
+    (ts.isVariableDeclaration(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isPropertySignature(parent) ||
+      ts.isPropertyDeclaration(parent) ||
+      ts.isMethodSignature(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isParameter(parent) ||
+      ts.isImportSpecifier(parent) ||
+      ts.isBindingElement(parent) ||
+      ts.isFunctionDeclaration(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isInterfaceDeclaration(parent) ||
+      ts.isTypeAliasDeclaration(parent)) &&
+    parent.name === node
+  );
+}
+
+export function isReflectionSource(fileName) {
+  const normal = normalize(fileName);
+  return ["/packages/jcs/src/", "/packages/jcs/test/", "/packages/a2a-ext-negotiation/src/", "/packages/a2a-ext-negotiation/test/"].some((dir) => normal.includes(dir));
+}
+
+function checkReflection(violations, node, fileName, location) {
+  const member = propertyName(node);
+  if (member !== undefined && alwaysBannedMembers.has(member)) {
+    add(violations, "reflection-api", `${location}: ".${member}" can reach code or objects by an indirect path.`);
+  }
+  if (member !== undefined && reflectionNames.has(member) && !isReflectionSource(fileName)) {
+    add(violations, "reflection-api", `${location}: Object.${member} is only allowed in @ix/jcs and @ix/a2a-ext-negotiation (source and tests), where it checks plain data.`);
+  }
+  if (ts.isIdentifier(node) && node.text === "Function" && !isDeclarationName(node)) {
+    add(violations, "dynamic-code", `${location}: Function builds code from text.`);
+  }
+  if (ts.isIdentifier(node) && globalNames.has(node.text) && !isDeclarationName(node)) {
+    const parent = node.parent;
+    const leadsToCrypto = parent !== undefined && propertyName(parent) === "crypto" && parent.expression === node;
+    if (!leadsToCrypto) {
+      add(violations, "global-object", `${location}: ${node.text} may only be used as ${node.text}.crypto.subtle followed by an allowed call.`);
+    }
+  }
+}
+
 function checkDynamicEscapes(violations, node, location) {
   if (isCryptoReference(node)) {
     const parent = node.parent;
@@ -504,6 +559,7 @@ export function evaluateSource(input) {
       }
     }
     checkDynamicEscapes(violations, node, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
+    checkReflection(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
     const accessed = propertyName(node);
     if (accessed === "subtle") {
       checkSubtleAccess(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
@@ -1315,6 +1371,40 @@ export function runSelfTest() {
       reason,
     );
   }
+
+  for (const [label, code, reason] of [
+    ["a crypto getter read through a property descriptor is rejected", 'const holder: unknown = Object.getOwnPropertyDescriptor(globalThis, "crypto")?.get?.call(globalThis);', "reflection-api"],
+    ["getPrototypeOf outside the data checkers is rejected", "const proto: unknown = Object.getPrototypeOf(value);", "reflection-api"],
+    ["an alias of globalThis is rejected", "const g = globalThis;", "global-object"],
+    ["globalThis.Function is rejected", 'const f = new globalThis.Function("x");', "global-object"],
+    ["a function constructor reached through .constructor is rejected", 'const f = (() => 1).constructor("x");', "reflection-api"],
+    ["the async function constructor is rejected", "const f = Object.getPrototypeOf(async function () { return 1; }).constructor;", "reflection-api"],
+    ["Function as a value is rejected", "const f = Function;", "dynamic-code"],
+    [".call is rejected", "const r = make.call(inner, 1);", "reflection-api"],
+    [".bind is rejected", "const r = make.bind(inner);", "reflection-api"],
+    ["__proto__ access is rejected", "const p: unknown = value.__proto__;", "reflection-api"],
+    ["the Node global object is rejected", "const g = global;", "global-object"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase("/virtual/packages/identity/src/signature.ts", `${code}\n`, "@ix/config", []),
+      reason,
+    );
+  }
+
+  cases += 1;
+  assertClean(
+    failures,
+    "jcs may check plain data with getPrototypeOf and getOwnPropertyDescriptor",
+    sourceCase(
+      "/virtual/packages/jcs/src/canonicalize.ts",
+      "export const plain = (value: object): boolean => Object.getPrototypeOf(value) === Object.prototype && Object.getOwnPropertyDescriptor(value, \"a\") !== undefined;\n",
+      "@ix/jcs",
+      [],
+    ),
+  );
 
   cases += 1;
   assertClean(
