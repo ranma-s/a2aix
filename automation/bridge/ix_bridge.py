@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Forward one approved testgen ticket to Claude Code, then to local Qwen, and stop.
-
-The bridge stores text only. It never executes the candidate, never starts a
-container, and never claims that tests passed.
-"""
-
 import argparse
 import hashlib
 import json
@@ -19,7 +13,8 @@ import urllib.request
 
 WALL_TIMEOUT_S = 900
 
-CLAUDE_BIN = "/home/ix-local/.local/bin/claude"
+CLAUDE_BIN_ENV = "IX_CLAUDE_BIN"
+DEFAULT_CLAUDE_BIN = "claude"
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 OLLAMA_MODEL = "qwen2.5-coder:14b"
 OLLAMA_NUM_CTX = 8192
@@ -63,9 +58,14 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def claude_bin() -> str:
+    value = os.environ.get(CLAUDE_BIN_ENV, "")
+    return value if value else DEFAULT_CLAUDE_BIN
+
+
 def claude_argv() -> list[str]:
     return [
-        CLAUDE_BIN,
+        claude_bin(),
         "-p",
         "--output-format", "json",
         "--tools", "",
@@ -153,7 +153,6 @@ def _check_paths(paths) -> None:
             raise _Reject("error", "bad-path")
     for path in paths:
         for forbidden in FORBIDDEN_PATHS:
-            # Refuse the path itself, anything under it, and any parent that contains it.
             if (path == forbidden or path.startswith(forbidden + "/")
                     or forbidden.startswith(path + "/")):
                 raise _Reject("rejected", "forbidden-path")
@@ -257,7 +256,6 @@ def _default_ollama(prompt_text: str, timeout: float) -> dict:
         OLLAMA_URL, data=body, method="POST",
         headers={"Content-Type": "application/json"},
     )
-    # No proxies and no redirects: the POST goes to the local URL and nowhere else.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
     with opener.open(request, timeout=timeout) as response:
         return {"text": response.read().decode("utf-8")}
@@ -318,7 +316,6 @@ def _run_locked(req, request_sha, prompt_text, limit, out_dir, state_dir,
     }
     _write_nofollow(partial_path, (json.dumps(partial) + "\n").encode("utf-8"), exclusive=True)
 
-    # From here on, any failure leaves the partial so the run is never replayed.
     if deadline - time.monotonic() <= 0:
         return _result("rejected", "timeout", request_sha, called)
     called["claude"] = True
@@ -364,7 +361,6 @@ def _run_locked(req, request_sha, prompt_text, limit, out_dir, state_dir,
         if _is_int(usage.get("output_tokens")):
             claude_info["outputTokens"] = usage["output_tokens"]
     if _is_number(claude_obj.get("total_cost_usd")):
-        # An estimate reported by the CLI, not a bill.
         claude_info["costEstimateUsd"] = claude_obj["total_cost_usd"]
 
     review_prompt = REVIEW_PREFIX + claude_obj["result"]
