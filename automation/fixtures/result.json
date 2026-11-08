@@ -1,0 +1,28 @@
+{
+  "execution": {
+    "exitCode": 0,
+    "files": [
+      {
+        "bytes": 39,
+        "path": "packages/a2a-ext-negotiation/test/path-gap.test.ts",
+        "sha256": "532b0c1668d3b0c2be728f3d9828c5ab9d7bc4f1524e01ec852054591ac25203"
+      }
+    ],
+    "runner": "repo-test",
+    "sourceSha": "bd3dbe4eff2cfa0e34989b718fe6c7eadb4eb77e",
+    "domain": {
+      "negativeCount": 6,
+      "observedRejectionReason": "a file needs a lowercase SHA-256, a byte size, and a media type",
+      "positiveControlPassed": true
+    }
+  },
+  "jobId": "path-gap-example",
+  "modelClaim": {
+    "status": "unreported",
+    "text": ""
+  },
+  "producer": "qwen-14b",
+  "requestSha256": "f64e63377aaa1400b1f9827f2ca8373e27fa662794f766b43d943206d7b434ac",
+  "reviewedSha": "bd3dbe4eff2cfa0e34989b718fe6c7eadb4eb77e",
+  "sourceSha": "bd3dbe4eff2cfa0e34989b718fe6c7eadb4eb77e"
+}

@@ -1,0 +1,27 @@
+{
+  "allowedPaths": [
+    "packages/a2a-ext-negotiation/test/path-gap.test.ts"
+  ],
+  "jobId": "path-gap-example",
+  "mode": "testgen",
+  "model": {
+    "name": "qwen2.5-coder:14b",
+    "options": {
+      "context": 8192,
+      "retries": 2
+    }
+  },
+  "outputLimits": {
+    "maxBytes": 4000,
+    "maxFiles": 1
+  },
+  "promptSha256": "acf33bc419dcac5cc2d99e687b11bd7fa2fab9c684e144bcefd2b0801aabcac0",
+  "risk": "non-security",
+  "sourceSha": "bd3dbe4eff2cfa0e34989b718fe6c7eadb4eb77e",
+  "domain": {
+    "acceptanceCategory": "document-path",
+    "positiveControlSha256": "325fbb8d8d35848acc8a0deb087fce8a53c833e84236c633a6537bfa2d615d74",
+    "rejectionReason": "a file needs a lowercase SHA-256, a byte size, and a media type",
+    "validInputSha256": "e9eee3bdb0535f1d7098296c8594d7c85c20a5afc947882eca0046182193f914"
+  }
+}
