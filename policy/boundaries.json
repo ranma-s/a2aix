@@ -13,7 +13,7 @@
     "@ix/identity": {
       "dir": "packages/identity",
       "layer": "core",
-      "dependsOn": []
+      "dependsOn": ["@ix/jcs"]
     },
     "@ix/protocol-core": {
       "dir": "packages/protocol-core",

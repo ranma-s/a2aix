@@ -104,6 +104,87 @@ export function isProtocolHashSource(fileName) {
   return normalize(fileName).includes("/packages/protocol-core/src/");
 }
 
+export function isIdentityKeySource(fileName) {
+  return normalize(fileName).includes("/packages/identity/src/");
+}
+
+function isStringArgument(node, text) {
+  return node !== undefined && ts.isStringLiteral(node) && node.text === text;
+}
+
+function isVerifyOnlyUsage(node) {
+  return (
+    node !== undefined &&
+    ts.isArrayLiteralExpression(node) &&
+    node.elements.length === 1 &&
+    isStringArgument(node.elements[0], "verify")
+  );
+}
+
+function subtleMethodCall(subtleNode) {
+  const member = subtleNode.parent;
+  if (member === undefined || propertyName(member) === undefined || member.expression !== subtleNode) {
+    return undefined;
+  }
+  const call = member.parent;
+  if (call === undefined || !ts.isCallExpression(call) || call.expression !== member) {
+    return undefined;
+  }
+  return { method: propertyName(member), call };
+}
+
+function checkSubtleAccess(violations, node, fileName, location) {
+  const used = subtleMethodCall(node);
+  if (used === undefined || !["digest", "importKey", "verify"].includes(used.method)) {
+    add(
+      violations,
+      "subtle-site",
+      `${location}: crypto.subtle may only be called directly as digest, importKey, or verify.`,
+    );
+    return;
+  }
+  if (used.method === "digest") {
+    return;
+  }
+  if (!isIdentityKeySource(fileName)) {
+    add(
+      violations,
+      "key-site",
+      `${location}: Ed25519 public-key verification is only allowed in packages/identity/src.`,
+    );
+    return;
+  }
+  const args = used.call.arguments;
+  if (used.method === "importKey") {
+    if (
+      args.length !== 5 ||
+      !isStringArgument(args[0], "raw") ||
+      !isStringArgument(args[2], "Ed25519") ||
+      args[3]?.kind !== ts.SyntaxKind.FalseKeyword ||
+      !isVerifyOnlyUsage(args[4])
+    ) {
+      add(
+        violations,
+        "key-import",
+        `${location}: importKey may only import a raw Ed25519 public key, not extractable, for verify only.`,
+      );
+    }
+    return;
+  }
+  if (args.length !== 4 || !isStringArgument(args[0], "Ed25519")) {
+    add(
+      violations,
+      "verify-algorithm",
+      `${location}: subtle.verify may only use the string literal "Ed25519".`,
+    );
+  }
+}
+
+function isAllowedImportKey(node, fileName) {
+  const object = node.expression;
+  return isIdentityKeySource(fileName) && object !== undefined && propertyName(object) === "subtle" && subtleMethodCall(object) !== undefined;
+}
+
 function propertyName(node) {
   if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
     return node.name.text;
@@ -111,11 +192,155 @@ function propertyName(node) {
   if (
     ts.isElementAccessExpression(node) &&
     node.argumentExpression !== undefined &&
-    ts.isStringLiteral(node.argumentExpression)
+    (ts.isStringLiteral(node.argumentExpression) || ts.isNoSubstitutionTemplateLiteral(node.argumentExpression))
   ) {
     return node.argumentExpression.text;
   }
   return undefined;
+}
+
+const globalObjectNames = new Set(["globalThis", "self", "window", "global"]);
+
+function isCryptoReference(node) {
+  if (ts.isIdentifier(node) && node.text === "crypto") {
+    const parent = node.parent;
+    if (parent === undefined) {
+      return false;
+    }
+    if (ts.isPropertyAccessExpression(parent) && parent.name === node) {
+      return false;
+    }
+    if ((ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent) || ts.isPropertySignature(parent) || ts.isPropertyDeclaration(parent) || ts.isMethodSignature(parent) || ts.isMethodDeclaration(parent) || ts.isParameter(parent) || ts.isImportSpecifier(parent) || ts.isBindingElement(parent)) && parent.name === node) {
+      return false;
+    }
+    return true;
+  }
+  return propertyName(node) === "crypto";
+}
+
+const reflectionNames = new Set(["getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getPrototypeOf", "setPrototypeOf", "defineProperty", "defineProperties"]);
+const alwaysBannedMembers = new Set(["constructor", "__proto__", "__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__", "call", "apply", "bind", "getBuiltinModule", "binding", "_linkedBinding", "dlopen", "mainModule"]);
+const nodeGlobalNames = new Set(["process", "require", "module", "exports", "Buffer", "__dirname", "__filename"]);
+const sensitiveStrings = new Set([...reflectionNamesList(), "constructor", "__proto__", "__lookupGetter__", "__lookupSetter__", "__defineGetter__", "__defineSetter__", "call", "apply", "bind", "getBuiltinModule", "binding", "_linkedBinding", "dlopen", "mainModule", "process", "crypto", "subtle", "webcrypto", "Function", "eval", "Reflect", "globalThis", ...bannedSigningNames]);
+const allowedAmbientFiles = ["/packages/protocol-core/src/platform.d.ts", "/packages/identity/src/platform.d.ts", "/packages/jcs/src/node-util.d.ts"];
+
+function reflectionNamesList() {
+  return ["getOwnPropertyDescriptor", "getOwnPropertyDescriptors", "getPrototypeOf", "setPrototypeOf", "defineProperty", "defineProperties"];
+}
+
+export function isAllowedAmbientFile(fileName) {
+  const normal = normalize(fileName);
+  return allowedAmbientFiles.some((allowed) => normal.endsWith(allowed));
+}
+
+function hasDeclareModifier(node) {
+  return ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword);
+}
+
+function checkAmbient(violations, node, fileName, location) {
+  if (isAllowedAmbientFile(fileName)) {
+    return;
+  }
+  if (hasDeclareModifier(node) || (ts.isModuleDeclaration(node) && node.name.kind === ts.SyntaxKind.Identifier && node.name.text === "global")) {
+    add(violations, "ambient-declaration", `${location}: declare adds globals the type check would otherwise reject. Only the reviewed platform.d.ts files may declare globals.`);
+  }
+  if (ts.isIdentifier(node) && nodeGlobalNames.has(node.text) && !isDeclarationName(node)) {
+    add(violations, "node-global", `${location}: ${node.text} is a Node global. Packages do not use Node built-ins.`);
+  }
+  if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && sensitiveStrings.has(node.text) && !isReflectionSource(fileName) && !isPropertyKeyOfAccess(node)) {
+    add(violations, "sensitive-name", `${location}: the string "${node.text}" names a crypto, reflection, or runtime member. Write the member directly so the checker can see it.`);
+  }
+}
+
+function isPropertyKeyOfAccess(node) {
+  const parent = node.parent;
+  return parent !== undefined && ts.isElementAccessExpression(parent) && parent.argumentExpression === node;
+}
+const globalNames = new Set(["globalThis", "global"]);
+
+function isDeclarationName(node) {
+  const parent = node.parent;
+  if (parent === undefined) {
+    return false;
+  }
+  if (ts.isPropertyAccessExpression(parent) && parent.name === node) {
+    return true;
+  }
+  return (
+    (ts.isVariableDeclaration(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isPropertySignature(parent) ||
+      ts.isPropertyDeclaration(parent) ||
+      ts.isMethodSignature(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isParameter(parent) ||
+      ts.isImportSpecifier(parent) ||
+      ts.isBindingElement(parent) ||
+      ts.isFunctionDeclaration(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isInterfaceDeclaration(parent) ||
+      ts.isTypeAliasDeclaration(parent)) &&
+    parent.name === node
+  );
+}
+
+export function isReflectionSource(fileName) {
+  const normal = normalize(fileName);
+  return ["/packages/jcs/src/", "/packages/jcs/test/", "/packages/a2a-ext-negotiation/src/", "/packages/a2a-ext-negotiation/test/"].some((dir) => normal.includes(dir));
+}
+
+function checkReflection(violations, node, fileName, location) {
+  const member = propertyName(node);
+  if (member !== undefined && alwaysBannedMembers.has(member)) {
+    add(violations, "reflection-api", `${location}: ".${member}" can reach code or objects by an indirect path.`);
+  }
+  if (member !== undefined && reflectionNames.has(member) && !isReflectionSource(fileName)) {
+    add(violations, "reflection-api", `${location}: Object.${member} is only allowed in @ix/jcs and @ix/a2a-ext-negotiation (source and tests), where it checks plain data.`);
+  }
+  if (ts.isIdentifier(node) && node.text === "Function" && !isDeclarationName(node)) {
+    add(violations, "dynamic-code", `${location}: Function builds code from text.`);
+  }
+  if (ts.isIdentifier(node) && globalNames.has(node.text) && !isDeclarationName(node)) {
+    const parent = node.parent;
+    const leadsToCrypto = parent !== undefined && propertyName(parent) === "crypto" && parent.expression === node;
+    if (!leadsToCrypto) {
+      add(violations, "global-object", `${location}: ${node.text} may only be used as ${node.text}.crypto.subtle followed by an allowed call.`);
+    }
+  }
+}
+
+function checkDynamicEscapes(violations, node, location) {
+  if (isCryptoReference(node)) {
+    const parent = node.parent;
+    const followedBySubtle = parent !== undefined && propertyName(parent) === "subtle" && parent.expression === node;
+    if (!followedBySubtle) {
+      add(violations, "subtle-site", `${location}: crypto may only be used as crypto.subtle followed by an allowed call.`);
+    }
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    propertyName(node) === undefined &&
+    (isCryptoReference(unwrap(node.expression)) || (ts.isIdentifier(unwrap(node.expression)) && globalObjectNames.has(unwrap(node.expression).text)))
+  ) {
+    add(violations, "subtle-site", `${location}: computed access on a global object or crypto needs a literal key.`);
+  }
+  if (ts.isIdentifier(node) && node.text === "Reflect" && !(node.parent !== undefined && ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)) {
+    add(violations, "reflect-api", `${location}: Reflect can reach any property by a computed name. Use plain property access.`);
+  }
+  if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+    const callee = unwrap(node.expression);
+    if (ts.isIdentifier(callee) && (callee.text === "eval" || callee.text === "Function")) {
+      add(violations, "dynamic-code", `${location}: ${callee.text} runs code built from text.`);
+    }
+    if (ts.isCallExpression(node)) {
+      const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire = ts.isIdentifier(callee) && callee.text === "require";
+      const first = node.arguments[0];
+      if ((isImport || isRequire) && (first === undefined || !ts.isStringLiteral(first))) {
+        add(violations, "dynamic-import", `${location}: import() and require() need a string literal module name.`);
+      }
+    }
+  }
 }
 
 export function isTestFile(fileName) {
@@ -315,6 +540,10 @@ export function evaluateSource(input) {
   };
   const jcsImplementation = isJcsImplementation(input.fileName);
 
+  if (input.fileName.endsWith(".d.ts") && !isAllowedAmbientFile(input.fileName)) {
+    add(violations, "ambient-declaration", `${normalize(input.fileName)}: a new .d.ts file can declare globals. Only the reviewed platform.d.ts files are allowed.`);
+  }
+
   function visit(node) {
     const specifier = moduleSpecifierText(node) ?? isRequireCall(node);
     if (specifier !== undefined) {
@@ -369,8 +598,14 @@ export function evaluateSource(input) {
         );
       }
     }
+    checkDynamicEscapes(violations, node, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
+    checkReflection(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
+    checkAmbient(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
     const accessed = propertyName(node);
-    if (accessed !== undefined && bannedSigningNames.has(accessed)) {
+    if (accessed === "subtle") {
+      checkSubtleAccess(violations, node, input.fileName, `${normalize(input.fileName)}:${String(lineOf(source, node))}`);
+    }
+    if (accessed !== undefined && bannedSigningNames.has(accessed) && !(accessed === "importKey" && isAllowedImportKey(node, input.fileName))) {
       add(
         violations,
         "signing-api",
@@ -1119,6 +1354,167 @@ export function runSelfTest() {
       "/virtual/packages/identity/src/index.ts",
       'export const exported = crypto.subtle["exportKey"]("raw");\n',
       "@ix/config",
+      [],
+    ),
+    "signing-api",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "identity may import a raw Ed25519 public key for verify and verify with it",
+    sourceCase(
+      "/virtual/packages/identity/src/signature.ts",
+      'export const key = await crypto.subtle.importKey("raw", new Uint8Array(32), "Ed25519", false, ["verify"]);\nexport const ok = await crypto.subtle.verify("Ed25519", key, new Uint8Array(64), new Uint8Array());\n',
+      "@ix/config",
+      [],
+    ),
+  );
+
+  for (const [label, code, reason] of [
+    ["importKey for signing is rejected", 'await crypto.subtle.importKey("raw", new Uint8Array(32), "Ed25519", false, ["sign"]);', "key-import"],
+    ["importKey of a private key format is rejected", 'await crypto.subtle.importKey("pkcs8", new Uint8Array(32), "Ed25519", false, ["verify"]);', "key-import"],
+    ["extractable importKey is rejected", 'await crypto.subtle.importKey("raw", new Uint8Array(32), "Ed25519", true, ["verify"]);', "key-import"],
+    ["importKey of another algorithm is rejected", 'await crypto.subtle.importKey("raw", new Uint8Array(32), "ECDSA", false, ["verify"]);', "key-import"],
+    ["verify with another algorithm is rejected", 'await crypto.subtle.verify("ECDSA", key, sig, data);', "verify-algorithm"],
+    ["an alias of crypto.subtle is rejected", "const subtle = crypto.subtle;", "subtle-site"],
+    ["destructuring crypto.subtle is rejected", "const { verify } = crypto.subtle;", "subtle-site"],
+    ["subtle.sign in identity is rejected", 'await crypto.subtle.sign("Ed25519", key, data);', "signing-api"],
+    ["subtle.generateKey in identity is rejected", 'await crypto.subtle.generateKey("Ed25519", false, ["sign"]);', "signing-api"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase("/virtual/packages/identity/src/signature.ts", `${code}\n`, "@ix/config", []),
+      reason,
+    );
+  }
+
+  for (const [label, code, reason] of [
+    ["Reflect.get on crypto is rejected", 'const subtle: unknown = Reflect.get(crypto, "subtle");', "reflect-api"],
+    ["Reflect.apply is rejected", "Reflect.apply(make, subtle, []);", "reflect-api"],
+    ["an alias of Reflect is rejected", "const r = Reflect;", "reflect-api"],
+    ["eval is rejected", 'eval("x");', "dynamic-code"],
+    ["the Function constructor is rejected", 'const f = new Function("return 1");', "dynamic-code"],
+    ["a built import name is rejected", 'await import("node:" + "crypto");', "dynamic-import"],
+    ["a template-literal key on crypto is rejected", "const k = crypto[`subtle`][`exportKey`];", "signing-api"],
+    ["a built key on globalThis is rejected", 'const c = globalThis["cry" + "pto"];', "subtle-site"],
+    ["passing crypto around is rejected", "const values = Object.values(crypto);", "subtle-site"],
+    ["an alias of crypto is rejected", "const c = crypto;", "subtle-site"],
+    ["globalThis.crypto without subtle is rejected", "const c = globalThis.crypto;", "subtle-site"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase("/virtual/packages/identity/src/signature.ts", `${code}\n`, "@ix/config", []),
+      reason,
+    );
+  }
+
+  for (const [label, code, reason] of [
+    ["a crypto getter read through a property descriptor is rejected", 'const holder: unknown = Object.getOwnPropertyDescriptor(globalThis, "crypto")?.get?.call(globalThis);', "reflection-api"],
+    ["getPrototypeOf outside the data checkers is rejected", "const proto: unknown = Object.getPrototypeOf(value);", "reflection-api"],
+    ["an alias of globalThis is rejected", "const g = globalThis;", "global-object"],
+    ["globalThis.Function is rejected", 'const f = new globalThis.Function("x");', "global-object"],
+    ["a function constructor reached through .constructor is rejected", 'const f = (() => 1).constructor("x");', "reflection-api"],
+    ["the async function constructor is rejected", "const f = Object.getPrototypeOf(async function () { return 1; }).constructor;", "reflection-api"],
+    ["Function as a value is rejected", "const f = Function;", "dynamic-code"],
+    [".call is rejected", "const r = make.call(inner, 1);", "reflection-api"],
+    [".bind is rejected", "const r = make.bind(inner);", "reflection-api"],
+    ["__proto__ access is rejected", "const p: unknown = value.__proto__;", "reflection-api"],
+    ["the Node global object is rejected", "const g = global;", "global-object"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase("/virtual/packages/identity/src/signature.ts", `${code}\n`, "@ix/config", []),
+      reason,
+    );
+  }
+
+  for (const [label, code, reason] of [
+    ["process.getBuiltinModule is rejected", 'const web = process.getBuiltinModule("crypto").webcrypto;', "node-global"],
+    ["process.binding is rejected", 'const b = process.binding("crypto");', "node-global"],
+    ["declare const in a source file is rejected", "declare const process: { readonly env: object };", "ambient-declaration"],
+    ["declare global is rejected", "declare global { const leak: number; }", "ambient-declaration"],
+    ["a built constructor key through a const is rejected", 'const k = "constructor" as const;', "sensitive-name"],
+    ["a reflection method name as a string is rejected", 'const k = "getOwnPropertyDescriptor" as const;', "sensitive-name"],
+    ["a signing method name as a string is rejected", 'const k = "generateKey";', "sensitive-name"],
+    ["the crypto name as a string is rejected", 'const k = "crypto";', "sensitive-name"],
+    ["require as a value is rejected", "const r = require;", "node-global"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase("/virtual/packages/identity/src/signature.ts", `${code}\n`, "@ix/config", []),
+      reason,
+    );
+  }
+
+  cases += 1;
+  assertReason(
+    failures,
+    "a new .d.ts file is rejected",
+    sourceCase("/virtual/packages/identity/src/zz-env.d.ts", "interface Leak { readonly a: number; }\n", "@ix/config", []),
+    "ambient-declaration",
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "the reviewed platform.d.ts may declare globals",
+    sourceCase("/virtual/packages/identity/src/platform.d.ts", "declare const TextDecoder: { new (): object };\n", "@ix/config", []),
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "jcs may check plain data with getPrototypeOf and getOwnPropertyDescriptor",
+    sourceCase(
+      "/virtual/packages/jcs/src/canonicalize.ts",
+      "export const plain = (value: object): boolean => Object.getPrototypeOf(value) === Object.prototype && Object.getOwnPropertyDescriptor(value, \"a\") !== undefined;\n",
+      "@ix/jcs",
+      [],
+    ),
+  );
+
+  cases += 1;
+  assertClean(
+    failures,
+    "globalThis.crypto.subtle.verify in identity is allowed",
+    sourceCase(
+      "/virtual/packages/identity/src/signature.ts",
+      'export const ok = await globalThis.crypto.subtle.verify("Ed25519", key, sig, data);\n',
+      "@ix/config",
+      [],
+    ),
+  );
+
+  for (const [label, file, pkg] of [
+    ["subtle.verify outside identity is rejected", "/virtual/packages/node/src/index.ts", "@ix/node"],
+    ["subtle.verify in an identity test is rejected", "/virtual/packages/identity/test/identity.test.ts", "@ix/config"],
+  ]) {
+    cases += 1;
+    assertReason(
+      failures,
+      label,
+      sourceCase(file, 'export const ok = await crypto.subtle.verify("Ed25519", key, sig, data);\n', pkg, []),
+      "key-site",
+    );
+  }
+
+  cases += 1;
+  assertReason(
+    failures,
+    "importKey outside identity is rejected",
+    sourceCase(
+      "/virtual/packages/protocol-core/src/hash.ts",
+      'export const key = await crypto.subtle.importKey("raw", new Uint8Array(32), "Ed25519", false, ["verify"]);\n',
+      "@ix/protocol-core",
       [],
     ),
     "signing-api",
