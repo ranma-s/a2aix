@@ -1,6 +1,6 @@
 # Handoff
 
-One page for an agent starting a fresh session on IX. Read this, then `AGENTS.md`. Open other files only when the task names them.
+One page for an agent starting a fresh session on IX. Read this, then `AGENTS.md`. The work queue is `docs/ops/queue.md`, roles and models are in `docs/ops/roles.md`, and the self-check before a PR is `docs/ops/checklist.md`. Open other files only when the task names them.
 
 ## What IX is
 
@@ -37,5 +37,5 @@ An A2A extension for job exchange. Two agents (a poster and a worker) negotiate 
 ## Open items
 
 - Stage 3 is built (D06, T26): a `TermApproval`'s `signature` is a detached EdDSA JWS by that party's approver `did:key`, and the four agent and approver names must all differ. The mock human is a second in-memory signer; `signApproval` still refuses. How a person holds the key is outside the protocol.
-- Next: write one short standard document in English and Japanese. Stage 4 (relay receipts) is deferred; time stays the sender's declaration (T25c).
+- Next: see `docs/ops/queue.md` (Q3 is the short standard document in English and Japanese). Stage 4 (relay receipts) is deferred; time stays the sender's declaration (T25c).
 - PR #4 (public docs) and PR #11 wait on the director.
