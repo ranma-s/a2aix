@@ -100,7 +100,7 @@ The verifier does not read the job's `expiresAt`. It checks only that each messa
 
 ## 10. Replay procedure
 
-Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscript` takes the job id, the relay events, both agent `did:key` names, both approver `did:key` names, and the relay profile [T25b, T26]. It selects events by the same kind, tag, issuer, signature, and duplicate rules as the agents [T25b, T25c]. It differs from the agents in two ways: it does not check the job's expiry (section 9), and it hashes the job as published (section 7).
+Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscript` takes the job id, the relay events, both agent `did:key` names, both approver `did:key` names, and the relay profile [T25b, T26]. It selects events by the same kind, tag, issuer, signature, and duplicate rules as the agents [T25b, T25c]. It differs from the agents in three ways. It does not check the job's expiry (section 9). It hashes the job as published (section 7). And it does not require the job's `description` and `expiresAt` to be text, while the agents refuse a job without them.
 
 1. Check that the four names all differ; if not, `issuers` fails.
 2. Sort the events by `id`. An event that is not an object with an object `body` fails `schema`; this is checked before the tag filter. Of the rest, keep only those tagged with the job id and of the job or negotiation kind.
@@ -110,7 +110,7 @@ Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscri
 6. From the anchor, take the first pending message, in relay order, whose `prevHash` equals the hash of the last applied message. Apply it with the machine and the chain checks, using `createdAt` as the clock. Repeat until none is left. A failed move fails `replay`, and fails `chain` too if a chain check failed.
 7. Each leftover message must point at a state in the chain, or `chain` fails. If its sender already sent a message after that state, `chain` fails. Otherwise it must be a valid move from that state, or `chain` fails. The valid ones are counted as `forks`.
 
-The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `chain`, and `signatures`, plus the fork and duplicate counts, and the phase. It also returns the terms of the last accepted agreement draft, whatever the phase. A draft that a human rejected still shows its terms, so read them together with the phase: they are agreed only when the phase is `agreed`.
+The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `chain`, and `signatures`, plus the fork and duplicate counts, and the phase. It also returns the terms of the current agreement draft. An accepted `TermAgreementDraft` sets that draft, and a `revise` clears it. So in `awaiting_approval` and `agreed` the terms are the draft's. In `negotiating` the list is empty, including after a `revise`, until the next draft is accepted. In `no_deal` the list holds the draft's terms if a draft was current when the negotiation ended (for example after a `reject`), and is empty otherwise. The terms are agreed only when the phase is `agreed`.
 
 ---
 
@@ -220,7 +220,10 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
 
 ## 10. 読み直しの手順
 
-誰でも、ノードを信用せずに履歴を確かめられます [D01]。`verifyTermTranscript` に渡すのは、仕事の id、中継のイベント、双方のエージェントの `did:key`、双方の承認者の `did:key`、中継の読み方です [T25b, T26]。イベントの選び方（種類、タグ、送り手、署名、重複）はエージェントと同じです [T25b, T25c]。エージェントと違うところは2つあります。依頼票の期限を確かめないこと（第9節）と、公開された依頼票をそのままハッシュすること（第7節）です。
+誰でも、ノードを信用せずに履歴を確かめられます [D01]。`verifyTermTranscript` に渡すのは、仕事の id、中継のイベント、双方のエージェントの `did:key`、双方の承認者の `did:key`、中継の読み方です [T25b, T26]。イベントの選び方（種類、タグ、送り手、署名、重複）はエージェントと同じです [T25b, T25c]。エージェントと違うところは3つあります。
+- 依頼票の期限を確かめないこと（第9節）
+- 公開された依頼票をそのままハッシュすること（第7節）
+- 依頼票の `description` と `expiresAt` が文字列であることを求めないこと。エージェントは、この2つがない依頼票では交渉を始めません。
 
 1. 4つの名前がすべて違うか確かめます。同じものがあれば `issuers` は不合格です。
 2. イベントを `id` の順に並べます。オブジェクトでないイベントや、`body` がオブジェクトでないイベントは、タグで絞る前に `schema` が不合格になります。残りのうち、その仕事の id のタグを持ち、依頼票か交渉の種類のものだけを残します。
@@ -239,7 +242,12 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
    - その状態から見て正しい手でなければ、`chain` は不合格です。
    - 正しい手なら、枝分かれ（`forks`）として数えます。
 
-結果として、`schema`、`issuers`、`replay`、`deadlines`、`chain`、`signatures` のそれぞれの合否と、枝分かれと重複の数、交渉の段階を返します。あわせて、最後に通った合意案の項目も返します。この項目は、交渉の段階に関係なく返します。人が却下した合意案の項目も出てくるので、段階と一緒に読んでください。合意した項目と言えるのは、段階が `agreed` のときだけです。
+結果として、`schema`、`issuers`、`replay`、`deadlines`、`chain`、`signatures` のそれぞれの合否と、枝分かれと重複の数、交渉の段階を返します。あわせて、いまの合意案の項目も返します。合意案は、`TermAgreementDraft` が通ったときに入り、`revise` で消えます。そのため、返す項目は段階によって次のように変わります。
+- 判断待ち（`awaiting_approval`）と合意（`agreed`）のとき：合意案の項目
+- 交渉中（`negotiating`）のとき：空。`revise` のあとも、次の合意案が通るまで空です
+- まとまらずに終わった（`no_deal`）とき：終わった時点で合意案があれば（たとえば `reject` のあと）その項目、なければ空
+
+合意した項目と言えるのは、段階が `agreed` のときだけです。
 
 ---
 
