@@ -33,14 +33,15 @@ The active set is the exact intersection of the URIs requested in `A2A-Extension
 Each message travels as a signed relay event with `issuer`, `kind`, `tags`, `createdAt`, `expiresAt`, `body`, `id`, and `sig` [T10, T25].
 
 - `sig` is a detached JWS by the issuer's agent key. Its payload is the JCS of `{issuer, kind, tags, createdAt, expiresAt, body}`, so `id` and `sig` are not signed [T25].
-- `id` is a placeholder chosen by the caller. "Relay order" in this text means events sorted by ascending `id`, which is how the agents and the verifier read them [T25].
-- A reader uses only events tagged `x-job` with the job's id, and dispatches them by kind [T25b, T25c]. The job uses kind `JobPosting/1` with body record `term-job`. Negotiation messages use kind `x-mock/negotiation-message` with body record `term`, plus the `A2A-Extensions` header that activates negotiation [T19, T25b]. Adding an event kind or tag is a human door, so these names stay as they are.
+- `id` is a placeholder chosen by the caller [T25]. "Relay order" in this text means events sorted by ascending `id`. That is how the code of both the agents and the verifier reads them, and relay order is what settles forks [D03].
+- A reader uses only events tagged `x-job` with the job's id, and dispatches them by kind [T25b, T25c]. The job uses kind `JobPosting/1` with body record `term-job`. Negotiation messages use kind `x-mock/negotiation-message` with body record `term` and an `extensionsHeader` field [T19, T25b]. That field must equal, character for character, the header that `formatExtensionHeader(profileExtensionOrder)` in `@ix/protocol-core` writes: the four URIs in the order negotiation, mandate, approval, transcript. The same four URIs in another order are refused, even though activation (section 3) would accept them.
+- The kind `x-mock/negotiation-message` and the tag `x-job` are private to the trial and are not profile vocabulary [T11]. Adding an event kind or tag is a human door, so this text does not name replacements.
 - An event whose signed content equals that of an earlier verified event is a duplicate. It is dropped and counted [T25b].
 - The relay node stores events without checking signatures [T25].
 
 ## 5. Term sheets and values
 
-A **term** has a `termId`, a `version`, a `valueType`, and optional `unit`, `codes`, and `label`. A **term sheet** lists required and optional terms. Two sheets exist: `ix:core/1` and `ix:sheet/web-site/1`, which extends the core [T18]. The core terms are `ix:price`, `ix:deadline`, `ix:revision-limit`, `ix:acceptance-window`, `ix:deliverables`, and `ix:deliverable-format`, plus the optional `ix:initial-spec` [T18].
+A **term** has a `termId`, a `version`, a `valueType`, and optional `unit`, `codes`, and `label`. A **term sheet** lists required and optional terms. Two sheets exist: `ix:core/1` and `ix:sheet/web-site/1`, which extends the core [T18]. The core required terms are `ix:price`, `ix:deadline`, `ix:revision-limit`, `ix:acceptance-window`, `ix:deliverables`, and `ix:deliverable-format`, and the core optional term is `ix:initial-spec` [T18].
 
 Value types: `money`, `date`, `datetime`, `deadline`, `integer`, `duration`, `boolean`, `code`, `codes`, `count`, `textRef`, `documents`. Their exact checks are `checkTermValue` in `@ix/a2a-ext-negotiation` and decisions T18b to T18g. Machines decide only on typed values; free text is for people and never changes a value, bound, deadline, or decision [T12].
 
@@ -66,7 +67,7 @@ Value types: `money`, `date`, `datetime`, `deadline`, `integer`, `duration`, `bo
 
 **Rounds.** Rounds are counted per term. When a counter would pass `roundLimitPerTerm`, an optional term is dropped and the negotiation continues; a required term ends it as `no_deal` [T18, T18b].
 
-**Agreement.** A draft is allowed when every required term is fixed and no request is pending. The agreement is `{agreementId, jobId, sheet, addedTerms, terms, transcriptHash}`, with the fixed terms sorted by `termId`. A receiver rebuilds it from the history and accepts the draft only when every field matches [T18, T18b]. The phase becomes `awaiting_approval`, and terms are frozen [D03].
+**Agreement.** A draft is allowed only while the phase is `negotiating`, every required term is `fixed`, and every optional term is `fixed`, `dropped`, or `open`. So an optional term whose value still waits for an answer (`proposed`), or any pending add, drop, or reopen request, blocks the draft (`readyForAgreement`). The agreement is `{agreementId, jobId, sheet, addedTerms, terms, transcriptHash}`, with the fixed terms sorted by `termId`. A receiver rebuilds it from the history and accepts the draft only when every field matches [T18, T18b]. The phase becomes `awaiting_approval`. While the humans decide, the machine refuses every message except `TermApproval` and `DealDecline`. That rule is in the code (`step` in `terms.ts`); no decision row records it.
 
 **Approval.** `approve` from both sides makes the phase `agreed`, and nothing changes after that [D03]. `reject` makes it `no_deal`. `revise` must name fixed terms; they reopen and the phase returns to `negotiating`. Only `approve` counts as approval [T18b].
 
@@ -74,7 +75,7 @@ Value types: `money`, `date`, `datetime`, `deadline`, `integer`, `duration`, `bo
 
 Messages form a chain [T23]:
 
-- The **anchor** is the hash of the job object as published.
+- The **anchor** is the hash of the job object [T23]. The verifier hashes the job object exactly as published. The agents hash the job rebuilt from the eight fields they read (`jobId`, `sheetId`, `sheetVersion`, `sheetSha256`, `preset`, `roundLimitPerTerm`, `description`, `expiresAt`). The two anchors agree only when the published job has no other fields.
 - `prevHash` is the hash of the whole previous message, signature included, or the anchor for the first message.
 - `valueHash` on `TermAccept` is the hash of the accepted value. For an add it is the hash of `{termId, request, definition, required}`, and for a drop or reopen the hash of `{termId, request}`.
 - A draft's `transcriptHash` equals its own `prevHash`.
@@ -95,19 +96,21 @@ The sender fills in these fields first, then signs. Messages are applied in chai
 
 A message must not be published at or after its own `expiresAt`. The agents also check the job's expiry when they read the job, before every move, and just before publishing [T21b]. Until relay receipts exist, time is the sender's declaration: an agent judges a message against its own clock, and the verifier judges it against the `createdAt` the sender signed [T25c, D06].
 
+The verifier does not read the job's `expiresAt`. It checks only that each message's `expiresAt` is after the `createdAt` of its event. A transcript whose messages all declare times after the job's expiry can therefore pass the verifier, while the agents would have stopped.
+
 ## 10. Replay procedure
 
-Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscript` takes the job id, the relay events, both agent `did:key` names, both approver `did:key` names, and the relay profile [T25b, T26]. It reads the events the same way the agents do:
+Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscript` takes the job id, the relay events, both agent `did:key` names, both approver `did:key` names, and the relay profile [T25b, T26]. It selects events by the same kind, tag, issuer, signature, and duplicate rules as the agents [T25b, T25c]. It differs from the agents in two ways: it does not check the job's expiry (section 9), and it hashes the job as published (section 7).
 
 1. Check that the four names all differ; if not, `issuers` fails.
-2. Sort the events by `id`. Keep only those tagged with the job id and of the job or negotiation kind.
+2. Sort the events by `id`. An event that is not an object with an object `body` fails `schema`; this is checked before the tag filter. Of the rest, keep only those tagged with the job id and of the job or negotiation kind.
 3. For each event: the issuer must be one of the two agents (`issuers`). Its `sig` must verify (`signatures`). Drop it if its signed content was already seen (`duplicates`).
 4. Job event: it must carry a `term-job` record from the client, and there must be only one. Check `sheetSha256` against a known sheet and the preset manifests, then open the session with the anchor set to the hash of the job.
-5. Negotiation event: it must be a `term` record with the activating header (`schema`). Decode the message (`schema`). `from` must match the issuer (`issuers`). The message signature must verify against the agent, or against the approver for `TermApproval` (`signatures`). `expiresAt` must be after `createdAt` (`deadlines`). The job must come first (`replay`).
+5. Negotiation event: it must be a `term` record whose `extensionsHeader` equals the profile's header exactly (`schema`). Decode the message (`schema`). `from` must match the issuer (`issuers`). The message signature must verify against the agent, or against the approver for `TermApproval` (`signatures`). `expiresAt` must be after `createdAt` (`deadlines`). The job must come first (`replay`).
 6. From the anchor, take the first pending message, in relay order, whose `prevHash` equals the hash of the last applied message. Apply it with the machine and the chain checks, using `createdAt` as the clock. Repeat until none is left. A failed move fails `replay`, and fails `chain` too if a chain check failed.
 7. Each leftover message must point at a state in the chain, or `chain` fails. If its sender already sent a message after that state, `chain` fails. Otherwise it must be a valid move from that state, or `chain` fails. The valid ones are counted as `forks`.
 
-The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `chain`, and `signatures`, plus the fork and duplicate counts, the phase, and the agreed terms.
+The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `chain`, and `signatures`, plus the fork and duplicate counts, and the phase. It also returns the terms of the last accepted agreement draft, whatever the phase. A draft that a human rejected still shows its terms, so read them together with the phase: they are agreed only when the phase is `agreed`.
 
 ---
 
@@ -139,14 +142,15 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
 メッセージは、署名つきの中継イベントで運びます。欄は `issuer`、`kind`、`tags`、`createdAt`、`expiresAt`、`body`、`id`、`sig` です [T10, T25]。
 
 - `sig` は、送り手のエージェントの鍵による切り離し JWS です。署名の対象は `{issuer, kind, tags, createdAt, expiresAt, body}` の JCS で、`id` と `sig` は含みません [T25]。
-- `id` は送り手が付ける仮の値です。この文で「中継の順」と言うときは、`id` の昇順を指します。エージェントも検証する側も、この順で読みます [T25]。
-- 読む側が使うのは、その仕事の id を `x-job` タグに持つイベントだけで、種類（`kind`）ごとに振り分けます [T25b, T25c]。依頼票は種類 `JobPosting/1` で、本文の記録名は `term-job` です。交渉のメッセージは種類 `x-mock/negotiation-message` で、記録名 `term` と、交渉を有効にする `A2A-Extensions` ヘッダーを持ちます [T19, T25b]。種類やタグを足すのは人の確認が要る変更なので、これらの名前は今のまま使います。
+- `id` は送り手が付ける仮の値です [T25]。この文で「中継の順」と言うときは、`id` の昇順を指します。エージェントと検証する側のコードは、どちらもこの順で読みます。枝分かれを決めるのは、この中継の順です [D03]。
+- 読む側が使うのは、その仕事の id を `x-job` タグに持つイベントだけで、種類（`kind`）ごとに振り分けます [T25b, T25c]。依頼票は種類 `JobPosting/1` で、本文の記録名は `term-job` です。交渉のメッセージは種類 `x-mock/negotiation-message` で、記録名 `term` と `extensionsHeader` の欄を持ちます [T19, T25b]。この欄は、`@ix/protocol-core` の `formatExtensionHeader(profileExtensionOrder)` が書く文字列と、1文字残らず同じでなければなりません。中身は、交渉・委任・承認・履歴の順に並べた4つの URI です。同じ4つでも並びが違えば拒否します。第3節の有効化の決まりでは受け付ける並びであっても、ここでは拒否します。
+- 種類 `x-mock/negotiation-message` とタグ `x-job` は試験だけで使う名前で、プロファイルの語彙ではありません [T11]。種類やタグを足すのは人の確認が要る変更なので、この文では代わりの名前を決めません。
 - 署名された中身が、すでに確かめたイベントと同じなら重複です。捨てて、数を数えます [T25b]。
 - 中継ノード自身は、署名を確かめずに保存します [T25]。
 
 ## 5. 項目表と値
 
-**項目**には `termId`、`version`、`valueType` があり、必要に応じて `unit`、`codes`、`label` を持ちます。**項目表**は、必須の項目と任意の項目を並べたものです。いまある項目表は `ix:core/1` と、それを広げた `ix:sheet/web-site/1` の2つです [T18]。共通の必須項目は `ix:price`、`ix:deadline`、`ix:revision-limit`、`ix:acceptance-window`、`ix:deliverables`、`ix:deliverable-format` で、任意の項目に `ix:initial-spec` があります [T18]。
+**項目**には `termId`、`version`、`valueType` があり、必要に応じて `unit`、`codes`、`label` を持ちます。**項目表**は、必須の項目と任意の項目を並べたものです。いまある項目表は `ix:core/1` と、それを広げた `ix:sheet/web-site/1` の2つです [T18]。共通の必須項目は `ix:price`、`ix:deadline`、`ix:revision-limit`、`ix:acceptance-window`、`ix:deliverables`、`ix:deliverable-format` で、共通の任意の項目は `ix:initial-spec` です [T18]。
 
 値の型は12種類です（一覧は英語の節）。細かな検査は `@ix/a2a-ext-negotiation` の `checkTermValue` と、T18b〜T18g の決定のとおりです。機械が判断に使うのは型の決まった値だけです。自由文は人が読むためのもので、値・範囲・期限・決定を変えません [T12]。
 
@@ -154,15 +158,32 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
 
 **始まり**：依頼する側が依頼票を出します。中身は `jobId`、`sheetId`、`sheetVersion`、`sheetSha256`（項目表の定義のハッシュ）、あらかじめ入れた値、`roundLimitPerTerm`、説明、`expiresAt` です [T19, T23]。あらかじめ入れた値は、依頼する側が提案した状態（`proposed`）から始まります。
 
-**メッセージ**：どのメッセージも `type`、`from`、`sentAt`、`expiresAt`、`prevHash`、`signature` を持ちます [T18, T23]。種類は10個で、それぞれの働きは英語の節の表のとおりです。要点は次のとおりです。
+**メッセージ**：どのメッセージも `type`、`from`、`sentAt`、`expiresAt`、`prevHash`、`signature` を持ちます [T18, T23]。種類は次の10個です。
 
-- 自分の値が相手の返事を待っている間は、同じ項目にもう一度提案できません。自分の提案や依頼を自分で受け入れることもできません。
-- 項目が確定（`fixed`）するのは、相手が同じ値を受け入れたときだけです。項目を足す・外す・確定を開き直すときも、相手の受け入れが要ります [T18]。
-- `TermRefuse` は、相手からの追加・削除・開き直しの依頼を断ります。追加の依頼は消え、削除や開き直しの依頼は元の状態・値・提案者に戻ります [T18c]。
+| 種類 | 働き |
+| --- | --- |
+| `TermPropose`、`TermCounter` | 未決（`open`）か提案中（`proposed`）の項目に値を出します。自分の値が相手の返事を待っている間は、同じ項目にもう一度出せません。対案（`TermCounter`）は、対案を出す相手の値があるときだけ出せます。 |
+| `TermAccept` | 相手の値や依頼を受け入れます。自分の値や依頼は受け入れられません。 |
+| `TermAdd` | 新しい項目を足したいと依頼します（`add_requested`）。 |
+| `TermDrop` | 未決か提案中の任意の項目を外したいと依頼します。必須の項目は外せません。 |
+| `TermReopen` | 確定（`fixed`）した項目を開き直したいと依頼します。 |
+| `TermRefuse` | 相手からの追加・削除・開き直しの依頼を断ります。追加の依頼は消え、削除や開き直しの依頼は元の状態・値・提案者に戻ります [T18c]。 |
+| `DealDecline` | 交渉を、まとまらずに終わらせます（`no_deal`）。 |
+| `TermAgreementDraft` | 合意案を出します。 |
+| `TermApproval` | 人間の `approve`（承認）、`reject`（却下）、`revise`（やり直し）です。 |
+
+**確定**：項目が確定するのは、相手が同じ値を受け入れたときだけです。項目を足す・外す・開き直すときも、相手の受け入れが要ります [T18]。
 
 **往復の上限**：往復は項目ごとに数えます。上限を超える対案が来たとき、任意の項目なら外して交渉を続け、必須の項目なら交渉はまとまらずに終わります（`no_deal`） [T18, T18b]。
 
-**合意案**：必須の項目がすべて確定し、返事待ちの依頼がないときだけ出せます。合意案は `{agreementId, jobId, sheet, addedTerms, terms, transcriptHash}` で、確定した項目を `termId` の順に並べたものです。受け取った側は履歴から同じものを作り直し、すべての欄が一致したときだけ受け付けます [T18, T18b]。この時点で人の判断待ち（`awaiting_approval`）になり、項目はもう動きません [D03]。
+**合意案**：合意案を出せるのは、次の3つがそろったときだけです（`readyForAgreement`）。
+- 交渉中（`negotiating`）であること
+- 必須の項目がすべて確定していること
+- 任意の項目がすべて、確定・外した（`dropped`）・未決のどれかであること
+
+任意の項目に返事待ちの値（`proposed`）が1つでも残っていれば、合意案は出せません。追加・削除・開き直しの依頼が返事待ちのときも同じです。合意案は `{agreementId, jobId, sheet, addedTerms, terms, transcriptHash}` で、確定した項目を `termId` の順に並べたものです。受け取った側は履歴から同じものを作り直し、すべての欄が一致したときだけ受け付けます [T18, T18b]。
+
+合意案が通ると、人の判断待ち（`awaiting_approval`）になります。この間、機械は `TermApproval` と `DealDecline` 以外のメッセージをすべて拒否します。この決まりはコード（`terms.ts` の `step`）にありますが、決定の記録には行がありません。
 
 **承認**：双方の人が `approve` すると合意（`agreed`）で、そのあとは何も変わりません [D03]。`reject` なら交渉はまとまらずに終わります。`revise` は、確定済みの項目を名指しして開き直し、交渉に戻します。承認として数えるのは `approve` だけです [T18b]。
 
@@ -170,7 +191,11 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
 
 メッセージは鎖のようにつながります [T23]。
 
-- 鎖の起点は、公開した依頼票のハッシュです。
+- 鎖の起点は、依頼票のハッシュです [T23]。ただし計算のしかたが2通りあります。
+  - 検証する側は、公開された依頼票をそのままハッシュします。
+  - エージェントは、読み取った8つの欄（`jobId`、`sheetId`、`sheetVersion`、`sheetSha256`、`preset`、`roundLimitPerTerm`、`description`、`expiresAt`）で依頼票を作り直してからハッシュします。
+
+  そのため、公開された依頼票にこれ以外の欄があると、2つの起点は一致しません。
 - `prevHash` は、1つ前のメッセージ全体（署名を含む）のハッシュです。最初のメッセージは起点を指します。
 - `TermAccept` の `valueHash` は、受け入れる値のハッシュです。追加の依頼なら `{termId, request, definition, required}`、削除や開き直しの依頼なら `{termId, request}` のハッシュです。
 - 合意案の `transcriptHash` は、その合意案自身の `prevHash` と同じ値です。
@@ -191,16 +216,18 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
 
 メッセージは、自分の `expiresAt` ちょうど、またはそのあとに出してはいけません。エージェントは、依頼票を読むとき、毎回の手の前、出す直前にも依頼票の期限を確かめます [T21b]。中継の受領印ができるまでは、時刻は送り手の申告です。エージェントは自分の時計で判断し、検証する側は送り手が署名した `createdAt` で判断します [T25c, D06]。
 
+検証する側は、依頼票の `expiresAt` を読みません。確かめるのは、各メッセージの `expiresAt` がそのイベントの `createdAt` よりあとであることだけです。そのため、すべてのメッセージが依頼票の期限よりあとの時刻を名乗っていても、検証は通ってしまいます。エージェントなら、その時点で止まります。
+
 ## 10. 読み直しの手順
 
-誰でも、ノードを信用せずに履歴を確かめられます [D01]。`verifyTermTranscript` に渡すのは、仕事の id、中継のイベント、双方のエージェントの `did:key`、双方の承認者の `did:key`、中継の読み方です [T25b, T26]。読み方はエージェントと同じです。
+誰でも、ノードを信用せずに履歴を確かめられます [D01]。`verifyTermTranscript` に渡すのは、仕事の id、中継のイベント、双方のエージェントの `did:key`、双方の承認者の `did:key`、中継の読み方です [T25b, T26]。イベントの選び方（種類、タグ、送り手、署名、重複）はエージェントと同じです [T25b, T25c]。エージェントと違うところは2つあります。依頼票の期限を確かめないこと（第9節）と、公開された依頼票をそのままハッシュすること（第7節）です。
 
 1. 4つの名前がすべて違うか確かめます。同じものがあれば `issuers` は不合格です。
-2. イベントを `id` の順に並べ、その仕事の id のタグを持ち、依頼票か交渉の種類のものだけを残します。
+2. イベントを `id` の順に並べます。オブジェクトでないイベントや、`body` がオブジェクトでないイベントは、タグで絞る前に `schema` が不合格になります。残りのうち、その仕事の id のタグを持ち、依頼票か交渉の種類のものだけを残します。
 3. 各イベントについて、送り手が双方のエージェントのどちらかであること（`issuers`）、`sig` が正しいこと（`signatures`）を確かめます。署名された中身がすでに出ていれば、重複として捨てます（`duplicates`）。
-4. 依頼票のイベントは、依頼する側からの `term-job` の記録で、1つだけでなければなりません。`sheetSha256` と、あらかじめ入れた値の目録を確かめ、依頼票のハッシュを起点にして交渉を開きます。
+4. 依頼票のイベントは、依頼する側からの `term-job` の記録で、1つだけでなければなりません。既知の項目表と照らして `sheetSha256` を確かめ、あらかじめ入れた値の目録も確かめてから、依頼票のハッシュを起点にして交渉を開きます。
 5. 交渉のイベントでは、次を順に確かめます。
-   - 交渉を有効にするヘッダーを持つ `term` の記録であること、メッセージとして読めること（`schema`）
+   - `term` の記録で、`extensionsHeader` が決まった文字列と完全に同じであること、メッセージとして読めること（`schema`）
    - `from` が送り手と一致すること（`issuers`）
    - メッセージの署名が、エージェントの鍵で正しいこと。`TermApproval` なら承認者の鍵で正しいこと（`signatures`）
    - `expiresAt` が `createdAt` よりあとであること（`deadlines`）
@@ -212,7 +239,7 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
    - その状態から見て正しい手でなければ、`chain` は不合格です。
    - 正しい手なら、枝分かれ（`forks`）として数えます。
 
-結果として、`schema`、`issuers`、`replay`、`deadlines`、`chain`、`signatures` のそれぞれの合否と、枝分かれと重複の数、交渉の段階、合意した項目を返します。
+結果として、`schema`、`issuers`、`replay`、`deadlines`、`chain`、`signatures` のそれぞれの合否と、枝分かれと重複の数、交渉の段階を返します。あわせて、最後に通った合意案の項目も返します。この項目は、交渉の段階に関係なく返します。人が却下した合意案の項目も出てくるので、段階と一緒に読んでください。合意した項目と言えるのは、段階が `agreed` のときだけです。
 
 ---
 
