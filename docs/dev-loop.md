@@ -57,9 +57,17 @@ node scripts/ix-job.mjs gate \
 
 ## Claude Code と手元の Qwen
 
-IX-Ubuntu には `/home/ix-local/.local/bin/claude` 版 2.1.311 があり、`claude auth status` は終了 0、`loggedIn=true`、`authMethod=claude.ai`、Pro である。資格情報のコピーも、API 課金の設定もしていない。
+Claude Code CLI が入っていて、サインイン済みの機械で動かす。CLI は 2.1.311 以上で、`claude auth status` が終了 0 になること。資格情報のコピーも、API 課金の設定もこのリポジトリには置かない。
 
-`automation/bridge/ix_bridge.py` は、人が起動したときだけ、そのバイナリを次の引数で一度呼ぶ。`--bare`、`--max-turns`、`--dangerously-skip-permissions` は使わない。ツールは空、`--safe-mode`、`--strict-mcp-config`、`--no-session-persistence`、`--permission-prompts none` である。標準エラーは保存しない。続けて `http://127.0.0.1:11434/api/generate` の `qwen2.5-coder:14b` にレビュー文を送る。票が URL やモデル名を差し替えることはできない。モデルの文章はファイルにするだけで、実行しない。
+`automation/bridge/ix_bridge.py` は、人が起動したときだけ、Claude CLI を次の引数で一度呼ぶ。CLI の場所は環境変数 `IX_CLAUDE_BIN` で指定する。空か未設定なら `claude` を PATH から探す。引数は場所によらず同じである。PATH の先頭に偽の `claude` があればそれが動くので、起動する人は PATH を確かめるか `IX_CLAUDE_BIN` に絶対パスを書く。結果の `claude.argv` の先頭は、設定によらず `claude` と書き、場所は残さない。`--bare`、`--max-turns`、`--dangerously-skip-permissions` は使わない。ツールは空、`--safe-mode`、`--strict-mcp-config`、`--no-session-persistence`、`--permission-prompts none` である。標準エラーは保存しない。続けて `http://127.0.0.1:11434/api/generate` の `qwen2.5-coder:14b` にレビュー文を送る。票が URL やモデル名を差し替えることはできない。モデルの文章はファイルにするだけで、実行しない。
+
+橋の約束は次のとおりである。
+
+- 文章を保存するだけで、候補を実行せず、コンテナを起動せず、試験に合格したとは言わない。
+- 禁止パスは、そのパス自身、その下のパス、それを含む親のパスのどれも拒否する。
+- Ollama への POST はプロキシを使わず、リダイレクトにも従わない。手元の URL だけに送る。
+- Claude を呼ぶ前に途中記録（partial）を書く。そのあとで失敗すると途中記録が残り、同じ票は二度と流さない（`uncertain-no-replay`）。
+- `costEstimateUsd` は CLI が報告した見積もりで、請求額ではない。
 
 成功時の `status` は `review-needed` である。これは `gated` ではない。`bridge-result.json` を `scripts/ix-job.mjs check-result` に渡すと、形が違うので終了 1 の `error` になる。試験を実行した証跡は、別の Podman の手順が作る。この橋はそれを作らない。
 
@@ -74,7 +82,9 @@ python3 automation/bridge/ix_bridge.py \
   --state automation/bridge/canary/state
 ```
 
-一つ目は偽の Claude と、この機械の中だけの HTTP で、課金しない。二つ目は Pro を 1 回と、手元の 14B を 1 回使う。実行前に、票の `sourceSha` が今の `main` と同じであることを人が見る。今の記録では両方とも `bd3dbe4eff2cfa0e34989b718fe6c7eadb4eb77e` である。違っていれば、その票は古い。二つ目は、この変更を書いたときには動かしていない。
+一つ目は偽の Claude と、この機械の中だけの HTTP で、課金しない。二つ目は Claude を 1 回と、手元の 14B を 1 回使う。
+
+`automation/bridge/canary/` の票は見本である。そこに書いた `sourceSha` は、書いた時点の main で、今の main ではない。手で別の SHA に直しても、次のマージでまた古くなる。最初に二つ目を動かす直前に、人か Grok が今の `main` に対して新しい canary の票を書き、`git rev-parse origin/main` と票の `sourceSha` が同じであることを人が見て、`node scripts/ix-job.mjs check-request` が終了 0 になることを確かめる。違っていれば、その票は古い。二つ目は、この変更を書いたときには動かしていない。
 
 `risk` が `non-security` であることは、安全の証明ではない。署名、鍵、正規化、承認のパスは、その語があっても拒否する。ロックファイルが残ったときは、橋のプロセスがいないことを確認してから人が消す。
 

@@ -5,12 +5,12 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 os.environ.setdefault("IX_BRIDGE_PY", str(Path(__file__).resolve().parent / "ix_bridge.py"))
 SOURCE_SHA = "bd3dbe4eff2cfa0e34989b718fe6c7eadb4eb77e"
-ARGV = [
-    "/home/ix-local/.local/bin/claude",
+FLAGS = [
     "-p",
     "--output-format",
     "json",
@@ -22,6 +22,7 @@ ARGV = [
     "--permission-prompts",
     "none",
 ]
+ARGV = ["claude", *FLAGS]
 
 
 def sha_bytes(data):
@@ -57,6 +58,10 @@ class Fake:
 
 class BridgeTests(unittest.TestCase):
     def setUp(self):
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("IX_CLAUDE_BIN", None)
         self.bridge = load_bridge()
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -90,7 +95,7 @@ class BridgeTests(unittest.TestCase):
             invoke_ollama=fake.ollama,
         )
 
-    def test_argv_is_the_pro_oauth_list(self):
+    def test_argv_is_the_fixed_list(self):
         self.assertEqual(self.bridge.claude_argv(), ARGV)
         self.assertEqual(self.bridge.WALL_TIMEOUT_S, 900)
         source = Path(os.environ["IX_BRIDGE_PY"]).read_text()
@@ -101,6 +106,22 @@ class BridgeTests(unittest.TestCase):
         self.assertNotIn("os.system", source)
         self.assertIn("start_new_session=True", source)
         self.assertIn("127.0.0.1:11434", source)
+
+    def test_claude_bin_comes_from_the_environment(self):
+        os.environ["IX_CLAUDE_BIN"] = "/opt/example/claude"
+        self.assertEqual(self.bridge.claude_argv(), ["/opt/example/claude", *FLAGS])
+        os.environ["IX_CLAUDE_BIN"] = ""
+        self.assertEqual(self.bridge.claude_argv(), ARGV)
+        source = Path(os.environ["IX_BRIDGE_PY"]).read_text()
+        self.assertNotIn("/home/", source)
+
+    def test_result_does_not_record_the_claude_bin(self):
+        os.environ["IX_CLAUDE_BIN"] = "/home/alice/.local/bin/claude"
+        outcome = self.execute()
+        self.assertEqual(outcome["status"], "review-needed")
+        self.assertEqual(outcome["claude"]["argv"], ARGV)
+        self.assertNotIn("/home/", json.dumps(outcome))
+        self.assertNotIn("/home/", (self.out / "bridge-result.json").read_text())
 
     def test_sample_ticket_is_review_needed_not_gated(self):
         outcome = self.execute()
