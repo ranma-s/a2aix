@@ -24,39 +24,43 @@ The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in [
 
 ## いまあるもの / What is here
 
-土台に、交渉の段階、依頼票の手元の中継、模試の発注側・受注側、そして署名を見ない検査を足してあります。署名は確認しません。段階は [`docs/negotiation-states.md`](docs/negotiation-states.md)、配り方は [`docs/distribution.md`](docs/distribution.md)、手元だけの試し方は [`docs/local-trial.md`](docs/local-trial.md)、到達点は [`docs/feature-map.md`](docs/feature-map.md)、ここまでの記録は [`docs/retrospective.md`](docs/retrospective.md) です。
+いまの動きの短い説明は [`docs/spec/ix-standard.md`](docs/spec/ix-standard.md) です（英語が先、日本語があと）。段階は [`docs/negotiation-states.md`](docs/negotiation-states.md)、配り方は [`docs/distribution.md`](docs/distribution.md)、手元だけの試し方は [`docs/local-trial.md`](docs/local-trial.md)、到達点は [`docs/feature-map.md`](docs/feature-map.md)、ここまでの記録は [`docs/retrospective.md`](docs/retrospective.md) です。
 
-- 項目を1つずつ確定させる交渉。仕事の種類ごとの項目表、項目ごとの値・対案・同意、確定した項目の一覧としての合意案、人間の承認・却下を扱います。時計は外から渡します。署名の欄は後で確認するための空席で、中身は見ていません。
+- 項目を1つずつ確定させる交渉。仕事の種類ごとの項目表、項目ごとの値・対案・同意、確定した項目の一覧としての合意案、人間の承認・却下・やり直しを扱います。時計は外から渡します。
 - 拡張の名乗り。`A2A-Extensions` に、4つの拡張のうち相手と自分の両方が持つものだけを返します。交渉は、委任・承認・履歴が揃ったときだけ有効です。違う版は、別の版で代わりに受けません。
-- 依頼票の掲載・検索・購読。タグ、種類、期間で探します。最初の置き場はメモリです。開いたノードだけが掲載を受けます。`id` と署名欄は渡された文字列のままで、確認しません。パッケージ自体はポートを開きません。
-- 模試の発注側と受注側。中継に依頼票と項目のメッセージを載せ、中継の記録だけから自分の状態を作ります。項目ごとの範囲の外の値は出しも同意もしません。依頼票の期限ちょうど・そのあとには交渉しません。自由文は命令にしません。人に見せる文面からは連絡先を除きます。人の承認は台本です。
-- 署名を見ない検査。中継の記録を別に読み直し、メッセージの形、送り主、項目の状態の進み方、期限を見ます。署名、JCS、JWS、prevHash は未確認（`deferred`）のままです。
+- 依頼票の掲載・検索・購読。タグ、種類、期間で探します。プロセスの中の中継で、最初の置き場はメモリです。開いたノードだけが掲載を受けます。中継ノードは、署名を確かめずに保管します（`signatureVerification` は `deferred` のままです）。`id` は呼び出し側が付ける仮の値です。パッケージ自体はポートを開きません。
+- 模試の発注側と受注側。中継に依頼票と項目のメッセージを載せ、中継の記録だけから自分の状態を作ります。項目ごとの範囲の外の値は出しも同意もしません。依頼票の期限ちょうど・そのあとには交渉しません。自由文は命令にしません。人に見せる文面からは連絡先を除きます。
+- 署名。模試のエージェントは、実行のたびにメモリの中だけで Ed25519 の鍵を作ります。鍵は取り出せず、保存しません。中継のイベントの `sig` と、交渉のメッセージの `signature` を、本文を切り離した JWS で署名します。双方と `@ix/verify` は、相手の `did:key` で確かめ、合わないものは受け付けません。
+- 人間の承認。模試では、各側の人間は台本で、その鍵はもう1つの、実行ごとにメモリの中だけで作る鍵です。`TermApproval` の署名は、その人の鍵で行います。双方のエージェントと双方の人の4つの `did:key` は、すべて違っていなければなりません。本物の承認アプリはなく、`signApproval` は署名を拒否します。人がどう鍵を持つかは、プロトコルの外です。
+- 指紋の鎖。交渉のメッセージは、前のメッセージのハッシュ（`prevHash`）でつながり、エージェントと `@ix/verify` が確かめます。ハッシュは、JCS（RFC 8785）の UTF-8 の SHA-256（小文字の16進）です。
+- 読み直し。`@ix/verify` は、中継の記録を別に読み直し、メッセージの形、送り主、イベントとメッセージと承認の署名、項目の状態の進み方、期限（依頼票の期限を含む）、指紋の鎖を確かめます。
 - 手元だけの試験。`deploy/local/compose.yaml` は `127.0.0.1` だけを聞き、ポートを公開しません。検証の `drive` も、同じ住所だけを起動して、終わったら止めます。
-- pnpm の TypeScript モノレポ。コア、アプリ、アダプタ、適合スイートをパッケージに分けてあります。
-- 依存の向きを CI で検査します。コアからアダプタへは戻れません。
-- JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。JSON でない値とプロキシは拒否します。回線上の JSON は、その前に `parseJson` で読み、重複キーと安全整数の外の整数を拒否します。入れ子の上限 64 は、この実装の上限です。配列の幅に上限はありません。
-- 正規化バイトの SHA-256（小文字の16進）は `@ix/protocol-core` にあります。将来の署名の対象は、トップレベルの `signature` を除いた JCS 文字列（`signingInputExcludingSignature`）です。指紋そのものは署名の対象ではありません。`hashCanonicalBody` は `signature` を消しません。署名の実装はまだありません。
-- 署名、鍵の生成、鍵の保管は入れていません。人間のセキュリティレビュアーの前には作りません。JCS とハッシュ方式の変更も、その人の確認が要ります。
-- 適合テスト6項目のうち、署名なしで確かめられる4項目を、範囲を書いたうえで合格にしています。自由文の試験は18件で、名前は結果に残します。残り2項目は未実施です。緑でも、6項目すべてに合格したことにはなりません。
+- pnpm の TypeScript モノレポ。コア、アプリ、アダプタ、適合スイートをパッケージに分けてあります。依存の向きを CI で検査します。コアからアダプタへは戻れません。
+- JCS（RFC 8785）の正規化は `@ix/jcs` の `canonicalize` だけが担当します。JSON でない値とプロキシは拒否します。回線上の JSON は、その前に `parseJson` で読み、重複キーと安全整数の外の整数を拒否します。入れ子の上限 64 は、この実装の上限です。
+- 適合テスト6項目のうち4項目を、範囲を書いたうえで合格にしています。模試のエージェントの署名、模試の人間の承認の署名、指紋の鎖は確かめます。委任状の署名と Agent Card の JWS は確かめません。項目6は、自由文の試験18件の名前を結果に残します。残り2項目は未実施です。緑でも、6項目すべてに合格したことにはなりません。模試の人間は台本であり、本物の人の承認ではありません。
 - 検査を破る見本が `fixtures/guardrails/` にあります。普通のビルドには入れません。`pnpm guardrails` は、見本が失敗することと、許される書き方は成功することを確かめます。
 
-This revision is the foundation, the negotiation phase rules, an in-memory relay, mock poster and worker agents, and the checks that do not look at signatures. Signatures are not checked. The plain-language maps are [`docs/negotiation-states.md`](docs/negotiation-states.md), [`docs/distribution.md`](docs/distribution.md), [`docs/local-trial.md`](docs/local-trial.md), [`docs/feature-map.md`](docs/feature-map.md), and [`docs/retrospective.md`](docs/retrospective.md).
+まだないもの：回線上の A2A、委任状、本物の人間の承認アプリ、人が承認の鍵をどう持つか（プロトコルの外）、中継の受領印（時刻は送り手の申告です）、鍵の保管、秘密鍵の書き出し、包含証明、MCP のツール。
 
-- Term-by-term negotiation: term sheets per kind of job, per-term values, counters, and acceptance, an agreement that is the list of fixed terms, and human approve or reject. The clock is injected. The signature field is a placeholder and is not verified.
+This revision is the foundation, the term-by-term negotiation machine, A2A-Extensions activation, an in-process relay, mock poster and worker agents, and the replay checks. A short description of what the code does today is [`docs/spec/ix-standard.md`](docs/spec/ix-standard.md) (English first, Japanese after). The plain-language maps are [`docs/negotiation-states.md`](docs/negotiation-states.md), [`docs/distribution.md`](docs/distribution.md), [`docs/local-trial.md`](docs/local-trial.md), [`docs/feature-map.md`](docs/feature-map.md), and [`docs/retrospective.md`](docs/retrospective.md).
+
+- Term-by-term negotiation: term sheets per kind of job, per-term values, counters, and acceptance, an agreement that is the list of fixed terms, and human approve, reject, or revise. The clock is injected.
 - Extension activation. `A2A-Extensions` returns only the profile URIs both sides listed. Negotiation turns on only together with mandate, approval, and transcript. A different version is not answered with this one.
-- In-process publish, query, and subscribe by tag, kind, and time. The first store is memory. Only an open node accepts publish. `id` and `sig` are stored as given and are not checked. The package opens no port.
-- Mock poster and worker agents. They put the term job and term messages on a relay and rebuild their state only from relay events. A value outside their own per-term mandate is neither sent nor accepted. Nothing is negotiated at or after the job's expiry. Free text is not an instruction. Contact details are removed from the copy a human would see. Human approval is a script.
-- Checks that do not look at a signature: an independent replay of the relay events for message shape, issuers, the term machine, and deadlines. Signature, JCS, JWS, and prevHash stay `deferred`.
+- In-process publish, query, and subscribe by tag, kind, and time. The first store is memory. Only an open node accepts publish. The relay node stores events without checking signatures (`signatureVerification` stays `deferred`). `id` is a placeholder chosen by the caller. The package opens no port.
+- Mock poster and worker agents. They put the term job and term messages on a relay and rebuild their state only from relay events. A value outside their own per-term mandate is neither sent nor accepted. Nothing is negotiated at or after the job's expiry. Free text is not an instruction. Contact details are removed from the copy a human would see.
+- Signatures. Each mock agent creates an Ed25519 key in memory for one run. It cannot be extracted and is never stored. The agent signs every relay event `sig` and every term message `signature` as a detached JWS. The agents and `@ix/verify` check them against the party's `did:key` and refuse what does not verify.
+- Human approval. Each mock human is a script holding a second in-memory key, made per run. A `TermApproval` is signed with that key. The four `did:key` names (two agents, two approvers) must all differ. There is no real approval app, and `signApproval` still refuses. How a person holds the key is outside the protocol.
+- Hash chain. Term messages are linked by the hash of the previous message (`prevHash`), checked by the agents and `@ix/verify`. The hash is the SHA-256 of the UTF-8 bytes of the JCS (RFC 8785) text, in lowercase hex.
+- Replay. `@ix/verify` reads the relay events independently and checks message shape, issuers, signatures of events, messages, and approvals, the term machine, deadlines (including the job's expiry), and the hash chain.
 - A private trial. `deploy/local/compose.yaml` binds `127.0.0.1` and publishes no ports. The verification drive starts that same address and stops it before exiting.
-- A pnpm TypeScript monorepo split into core, app, adapter, and conformance packages.
-- CI rejects a dependency that points the wrong way. Core cannot import adapters.
-- JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. Values that are not JSON, and proxies, are rejected. Wire JSON is read first with `parseJson`, which rejects duplicate keys and integers outside the safe range. The nesting cap of 64 is this implementation's limit. Array length is not capped.
-- SHA-256 of those UTF-8 bytes, lowercase hex, lives in `@ix/protocol-core`. The text a future signature would cover is `signingInputExcludingSignature`: JCS with the top-level `signature` removed. The hash itself is not that text. `hashCanonicalBody` does not remove `signature`. Signing is still absent.
-- Signing, key generation, and key storage are absent, and they stay absent until a human security reviewer has accepted them. Changes to JCS or the hash also wait for that reviewer.
-- Four of the six conformance items pass inside a recorded limit that does not check signatures. Item 6 names the eighteen free-text cases it ran. The other two stay `pending`. A green run is not a full pass.
+- A pnpm TypeScript monorepo split into core, app, adapter, and conformance packages. CI rejects a dependency that points the wrong way. Core cannot import adapters.
+- JCS (RFC 8785) canonicalization has one home: `canonicalize` in `@ix/jcs`. Values that are not JSON, and proxies, are rejected. Wire JSON is read first with `parseJson`, which rejects duplicate keys and integers outside the safe range. The nesting cap of 64 is this implementation's limit.
+- Four of the six conformance items pass inside a recorded limit. They check the mock agents' signatures, the mock humans' approval signatures, and the hash chain. They do not check mandate signatures or the Agent Card JWS. Item 6 names the eighteen free-text cases it ran. The other two items stay `pending`. A green run is not a full pass. The mock humans are scripts, not a real person's approval.
 - Violating dummies live in `fixtures/guardrails/` and stay out of the normal build. `pnpm guardrails` requires those dummies to fail and the allowed forms to pass.
 
-役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。いまのコードの動きの短い説明は [`docs/spec/ix-standard.md`](docs/spec/ix-standard.md) です。
+Not built: wire A2A, mandate documents, a real human approval app, the way a person holds an approval key (outside the protocol), relay receipts (time stays the sender's declaration), key storage, private-key export, inclusion proofs, and MCP tools.
+
+役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。
 
 ## 参加する / How to contribute
 
@@ -88,11 +92,11 @@ pnpm check
 | `pnpm boundaries` | 依存の向き、コメント禁止（ライセンスヘッダを除く）、空の `catch`、無期限ループ、暗号ライブラリ、秘密鍵。検査自体の自己テストも含みます。 |
 | `pnpm guardrails` | 禁止事項の見本が失敗し、許される書き方は成功する。`any`、危険な型変換、コメント、コアからアダプタまたはアプリへの依存。 |
 | `pnpm test` | ユニットテスト。適合スイートは含みません。 |
-| `pnpm conformance` | 適合テスト6項目。4項目は範囲つきで合格、2項目は `pending`。項目6は18件の自由文試験。署名の確認ではありません。 |
+| `pnpm conformance` | 適合テスト6項目。4項目は範囲つきで合格、2項目は `pending`。項目6は18件の自由文試験。模試のエージェントと模試の人間の署名、指紋の鎖は確かめるが、委任状の署名と Agent Card の JWS は確かめない。 |
 
 CI は同じ6つを、別々のジョブで実行します。
 
-**適合テストのジョブが緑でも、6項目すべてに合格したことにはなりません。** 合格は4項目だけで、署名は見ていません。1と2は未実施です。
+**適合テストのジョブが緑でも、6項目すべてに合格したことにはなりません。** 合格は4項目だけで、委任状の署名と Agent Card の JWS は見ていません。1と2は未実施です。
 
 エージェントが同じ確認をする入口は次です。
 
@@ -109,16 +113,16 @@ node scripts/verify-ix-node.mjs cleanup
 ```
 packages/jcs                  JCS（RFC 8785）。正規化はここだけ
 packages/config               open / closed
-packages/identity             鍵操作の拒否。鍵そのものは無い
+packages/identity             Ed25519 の JWS の検証と、メモリの中だけの署名。鍵の保管と書き出しは拒否
 packages/protocol-core        拡張 URI 4つと、A2A-Extensions、正規化バイトの SHA-256
-packages/distribution          依頼票の形とタグ検索。署名は見ない
+packages/distribution          依頼票の形とタグ検索。ハッシュも署名の確認もしない
 packages/log                   透明性ログのスタブ
 packages/a2a-ext-*             項目を1つずつ確定させる交渉の機械。委任範囲・承認・履歴はスタブ
 packages/node                  プロセス内の中継。パッケージはポートを開かない
-packages/agents                模試の発注側と受注側。署名は見ない
-packages/verify                署名を見ない検査。署名などは deferred
+packages/agents                模試の発注側と受注側。署名して、確かめる
+packages/verify                中継の記録の読み直し。署名・指紋の鎖・期限を確かめる
 packages/ledger                台帳のスタブ
-packages/approval-app          承認アプリのスタブ。署名しない
+packages/approval-app          承認アプリのスタブ。署名を拒否する
 packages/adapters              メモリの置き場。他から依存されない
 packages/conformance           適合テスト。4項目は範囲つき合格、2項目は未実施
 deploy/                        設定例と、127.0.0.1 だけの試験
