@@ -1,6 +1,6 @@
 # 交渉の進み方
 
-このページは、仕事の条件を決めるときの進み方を説明します。エンジニアでなくても読めるように書いてあります。仕様は [`spec/term-protocol-draft.md`](spec/term-protocol-draft.md) です。署名を確かめる機能は、まだありません。手元で試す方法は [`local-trial.md`](local-trial.md) です。
+このページは、仕事の条件を決めるときの進み方を説明します。エンジニアでなくても読めるように書いてあります。仕様は [`spec/term-protocol-draft.md`](spec/term-protocol-draft.md) です。模試のエージェントと模試の人間の署名、指紋の鎖は、双方と `@ix/verify` が確かめます。本物の人が使う承認アプリは、まだありません。手元で試す方法は [`local-trial.md`](local-trial.md) です。
 
 ## 登場人物
 
