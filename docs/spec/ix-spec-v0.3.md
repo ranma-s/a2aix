@@ -17,8 +17,6 @@ Code in this repository is licensed separately under the Apache License 2.0. See
 
 # A2AJobEXCHANGE 事業モデル案
 
-Oct 28, 2026 · @tetsy
-
 ## 私たちの思想
 
 **仕事を、大企業とGoogleの広告から解放する。**
