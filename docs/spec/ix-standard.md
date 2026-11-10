@@ -96,17 +96,17 @@ The sender fills in these fields first, then signs. Messages are applied in chai
 
 A message must not be published at or after its own `expiresAt`. The agents also check the job's expiry when they read the job, before every move, and just before publishing [T21b]. Until relay receipts exist, time is the sender's declaration: an agent judges a message against its own clock, and the verifier judges it against the `createdAt` the sender signed [T25c, D06].
 
-The verifier does not read the job's `expiresAt`. It checks only that each message's `expiresAt` is after the `createdAt` of its event. A transcript whose messages all declare times after the job's expiry can therefore pass the verifier, while the agents would have stopped.
+The verifier also reads the job's `expiresAt`. `deadlines` fails for a negotiation message whose event `createdAt` is at or after that time, and for a job whose `expiresAt` is missing, not text, or not a date. The verifier judges only the `createdAt` the sender signed; it has no clock of its own [T27].
 
 ## 10. Replay procedure
 
-Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscript` takes the job id, the relay events, both agent `did:key` names, both approver `did:key` names, and the relay profile [T25b, T26]. It selects events by the same kind, tag, issuer, signature, and duplicate rules as the agents [T25b, T25c]. It differs from the agents in three ways. It does not check the job's expiry (section 9). It hashes the job as published (section 7). And it does not require the job's `description` and `expiresAt` to be text, while the agents refuse a job without them.
+Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscript` takes the job id, the relay events, both agent `did:key` names, both approver `did:key` names, and the relay profile [T25b, T26]. It selects events by the same kind, tag, issuer, signature, and duplicate rules as the agents [T25b, T25c]. It differs from the agents in two ways. It hashes the job as published (section 7). And it does not require the job's `description` to be text, while the agents refuse a job without it. The job's expiry is checked by both, the agents against their clocks and the verifier against `createdAt` (section 9).
 
 1. Check that the four names all differ; if not, `issuers` fails.
 2. Sort the events by `id`. An event that is not an object with an object `body` fails `schema`; this is checked before the tag filter. Of the rest, keep only those tagged with the job id and of the job or negotiation kind.
 3. For each event: the issuer must be one of the two agents (`issuers`). Its `sig` must verify (`signatures`). Drop it if its signed content was already seen (`duplicates`).
 4. Job event: it must carry a `term-job` record from the client, and there must be only one. Check `sheetSha256` against a known sheet and the preset manifests, then open the session with the anchor set to the hash of the job.
-5. Negotiation event: it must be a `term` record whose `extensionsHeader` equals the profile's header exactly (`schema`). Decode the message (`schema`). `from` must match the issuer (`issuers`). The message signature must verify against the agent, or against the approver for `TermApproval` (`signatures`). `expiresAt` must be after `createdAt` (`deadlines`). The job must come first (`replay`).
+5. Negotiation event: it must be a `term` record whose `extensionsHeader` equals the profile's header exactly (`schema`). Decode the message (`schema`). `from` must match the issuer (`issuers`). The message signature must verify against the agent, or against the approver for `TermApproval` (`signatures`). `expiresAt` must be after `createdAt`, and `createdAt` must be before the job's `expiresAt` (`deadlines`). The job must come first (`replay`).
 6. From the anchor, take the first pending message, in relay order, whose `prevHash` equals the hash of the last applied message. Apply it with the machine and the chain checks, using `createdAt` as the clock. Repeat until none is left. A failed move fails `replay`, and fails `chain` too if a chain check failed.
 7. Each leftover message must point at a state in the chain, or `chain` fails. If its sender already sent a message after that state, `chain` fails. Otherwise it must be a valid move from that state, or `chain` fails. The valid ones are counted as `forks`.
 
@@ -216,14 +216,15 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
 
 メッセージは、自分の `expiresAt` ちょうど、またはそのあとに出してはいけません。エージェントは、依頼票を読むとき、毎回の手の前、出す直前にも依頼票の期限を確かめます [T21b]。中継の受領印ができるまでは、時刻は送り手の申告です。エージェントは自分の時計で判断し、検証する側は送り手が署名した `createdAt` で判断します [T25c, D06]。
 
-検証する側は、依頼票の `expiresAt` を読みません。確かめるのは、各メッセージの `expiresAt` がそのイベントの `createdAt` よりあとであることだけです。そのため、すべてのメッセージが依頼票の期限よりあとの時刻を名乗っていても、検証は通ってしまいます。エージェントなら、その時点で止まります。
+検証する側も、依頼票の `expiresAt` を読みます。交渉のメッセージのイベントの `createdAt` が依頼票の期限ちょうど、またはそのあとなら、`deadlines` は不合格です。依頼票に `expiresAt` がない、文字列でない、日付として読めない場合も不合格です。検証する側が使うのは、送り手が署名した `createdAt` だけで、自分の時計は持ちません [T27]。
 
 ## 10. 読み直しの手順
 
-誰でも、ノードを信用せずに履歴を確かめられます [D01]。`verifyTermTranscript` に渡すのは、仕事の id、中継のイベント、双方のエージェントの `did:key`、双方の承認者の `did:key`、中継の読み方です [T25b, T26]。イベントの選び方（種類、タグ、送り手、署名、重複）はエージェントと同じです [T25b, T25c]。エージェントと違うところは3つあります。
-- 依頼票の期限を確かめないこと（第9節）
+誰でも、ノードを信用せずに履歴を確かめられます [D01]。`verifyTermTranscript` に渡すのは、仕事の id、中継のイベント、双方のエージェントの `did:key`、双方の承認者の `did:key`、中継の読み方です [T25b, T26]。イベントの選び方（種類、タグ、送り手、署名、重複）はエージェントと同じです [T25b, T25c]。エージェントと違うところは2つあります。
 - 公開された依頼票をそのままハッシュすること（第7節）
-- 依頼票の `description` と `expiresAt` が文字列であることを求めないこと。エージェントは、この2つがない依頼票では交渉を始めません。
+- 依頼票の `description` が文字列であることを求めないこと。エージェントは、これがない依頼票では交渉を始めません。
+
+依頼票の期限は、エージェントは自分の時計で、検証する側は `createdAt` で確かめます（第9節）。
 
 1. 4つの名前がすべて違うか確かめます。同じものがあれば `issuers` は不合格です。
 2. イベントを `id` の順に並べます。オブジェクトでないイベントや、`body` がオブジェクトでないイベントは、タグで絞る前に `schema` が不合格になります。残りのうち、その仕事の id のタグを持ち、依頼票か交渉の種類のものだけを残します。
@@ -233,7 +234,7 @@ The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `c
    - `term` の記録で、`extensionsHeader` が決まった文字列と完全に同じであること、メッセージとして読めること（`schema`）
    - `from` が送り手と一致すること（`issuers`）
    - メッセージの署名が、エージェントの鍵で正しいこと。`TermApproval` なら承認者の鍵で正しいこと（`signatures`）
-   - `expiresAt` が `createdAt` よりあとであること（`deadlines`）
+   - `expiresAt` が `createdAt` よりあとで、`createdAt` が依頼票の `expiresAt` より前であること（`deadlines`）
    - 依頼票より前に来ていないこと（`replay`）
 6. 起点から始めて、`prevHash` が直前に当てはめたメッセージのハッシュと一致するものを、中継の順で最初に見つかったものから当てはめます。このとき、時計には `createdAt` を使い、交渉の決まりと鎖の決まりの両方で確かめます。当てはまるものがなくなるまで繰り返します。当てはめに失敗すると `replay` が不合格で、鎖の決まりで失敗した場合は `chain` も不合格です。
 7. 残ったメッセージは、次の順に確かめます。

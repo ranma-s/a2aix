@@ -162,6 +162,7 @@ export async function verifyTermTranscript(input: {
   let deadlines: "pass" | "fail" = "pass";
   let chain: "pass" | "fail" = "pass";
   let session: TermSession | undefined;
+  let jobExpiry = Number.NaN;
   let count = 0;
   const pending: { readonly label: string; readonly message: TermMessage; readonly createdAt: string }[] = [];
   for (const event of input.events.slice().sort(byId)) {
@@ -217,6 +218,13 @@ export async function verifyTermTranscript(input: {
         problems.push(opened);
       } else {
         session = opened;
+        const job = body["job"];
+        const declared = isObject(job) ? text(job, "expiresAt") : undefined;
+        jobExpiry = declared === undefined ? Number.NaN : Date.parse(declared);
+        if (Number.isNaN(jobExpiry)) {
+          deadlines = "fail";
+          problems.push("the job record has no usable expiresAt");
+        }
       }
       continue;
     }
@@ -252,6 +260,11 @@ export async function verifyTermTranscript(input: {
     if (session === undefined) {
       replay = "fail";
       problems.push(`message ${String(count)}: before the job`);
+      continue;
+    }
+    if (Number.isNaN(jobExpiry) || jobExpiry <= Date.parse(createdAt)) {
+      deadlines = "fail";
+      problems.push(`message ${String(count)}: published at or after the job's expiry`);
       continue;
     }
     pending.push({ label: `message ${String(count)}`, message: decoded.message, createdAt });
