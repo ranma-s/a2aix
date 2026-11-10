@@ -37,5 +37,6 @@ An A2A extension for job exchange. Two agents (a poster and a worker) negotiate 
 ## Open items
 
 - Stage 3 is built (D06, T26): a `TermApproval`'s `signature` is a detached EdDSA JWS by that party's approver `did:key`, and the four agent and approver names must all differ. The mock human is a second in-memory signer; `signApproval` still refuses. How a person holds the key is outside the protocol.
-- Next: see `docs/ops/queue.md` (Q3 is the short standard document in English and Japanese). Stage 4 (relay receipts) is deferred; time stays the sender's declaration (T25c).
+- The short standard is `docs/spec/ix-standard.md` (Q3). It is written from the code and `decisions.tsv`; when either changes, update it too.
+- Next: see `docs/ops/queue.md`. Stage 4 (relay receipts) is deferred; time stays the sender's declaration (T25c).
 - PR #4 (public docs) and PR #11 wait on the director.
