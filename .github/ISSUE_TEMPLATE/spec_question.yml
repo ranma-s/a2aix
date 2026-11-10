@@ -1,0 +1,36 @@
+name: 仕様の質問 / Spec question
+description: 「交渉の拡張仕様（案 v0.3）」についての質問や提案。事業の数字は要件ではありません。
+title: "[spec] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        規範になる本文は `docs/spec/ix-spec-v0.3.md` の「交渉の拡張仕様（案 v0.3）」です。いまの動きの短い説明は `docs/spec/ix-standard.md` です。それより前の事業の数字は仮説です。
+
+        The normative text is the section 「交渉の拡張仕様（案 v0.3）」 in `docs/spec/ix-spec-v0.3.md`. A short description of what the code does today is `docs/spec/ix-standard.md`. The business figures above that section are hypotheses, not requirements.
+
+        攻撃の手順になる欠陥は、公開の Issue に書かず [SECURITY.md](https://github.com/ranma-s/a2aix/blob/main/SECURITY.md) に従ってください。署名、鍵、JCS、ハッシュの決まりを変える提案は、人間のセキュリティレビュアーの確認が要ります。
+
+        A flaw that hands over an attack procedure belongs in the private report from SECURITY.md, not here. A proposal that changes signatures, keys, JCS, or the hash needs the human security reviewer.
+  - type: input
+    id: section
+    attributes:
+      label: 節 / Section
+      description: 仕様のどの節か。見出しを書いてください。
+      placeholder: 交渉の拡張仕様（案 v0.3）
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: 質問または提案 / Question or proposal
+    validations:
+      required: true
+  - type: textarea
+    id: not-a-requirement
+    attributes:
+      label: 事業の数字を要件にしていないか / Business figures
+      description: 前半の市場や収益の数字を、実装の要件として扱っていないことを確認してください。
+      placeholder: この Issue は事業の数字を要件にしていません。
+    validations:
+      required: true

@@ -1,5 +1,9 @@
 # IX
 
+> **実験的なソフトウェアです。本番では使わないでください。セキュリティ監査は、まだありません。**
+>
+> **Experimental software. Do not use it in production. There has not been a security audit.**
+
 誰でも自分の A2A 仕事交換ノードを立てられる、オープンソースの一式です。設定の `mode` で、インターネットに開いた交換（`open`）と、組織の中だけの交換（`closed`）を切り替えます。最初のノードは特別な中央ではなく、ただの一台です。
 
 このリポジトリは、いまは非公開です。仕様をコミュニティで育てるために、あとで公開します。
@@ -52,7 +56,17 @@ This revision is the foundation, the negotiation phase rules, an in-memory relay
 - Four of the six conformance items pass inside a recorded limit that does not check signatures. Item 6 names the eighteen free-text cases it ran. The other two stay `pending`. A green run is not a full pass.
 - Violating dummies live in `fixtures/guardrails/` and stay out of the normal build. `pnpm guardrails` requires those dummies to fail and the allowed forms to pass.
 
-役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。
+役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。いまのコードの動きの短い説明は [`docs/spec/ix-standard.md`](docs/spec/ix-standard.md) です。
+
+## 参加する / How to contribute
+
+手順は [`CONTRIBUTING.md`](CONTRIBUTING.md)、行動規範は [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) です。仕様の議論と不具合は GitHub の Issue を使います。
+
+脆弱性は公開の Issue に書かないでください。[`SECURITY.md`](SECURITY.md) の非公開報告を使います。
+
+The steps are in [`CONTRIBUTING.md`](CONTRIBUTING.md). The code of conduct is [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Use GitHub issues for spec discussion and defects.
+
+Do not file a public issue for a vulnerability. Use the private report in [`SECURITY.md`](SECURITY.md).
 
 ## チェックの走らせ方 / How to run the checks
 
@@ -116,6 +130,9 @@ docs/local-trial.md            手元だけの試験。非エンジニア向け
 docs/feature-map.md            動くものと、まだないもの
 docs/retrospective.md          ここまでの記録。非エンジニア向け
 docs/team.md                   チーム
+SECURITY.md                    脆弱性の非公開報告
+CONTRIBUTING.md                参加の手順
+CODE_OF_CONDUCT.md             Contributor Covenant 2.1
 .cursor/skills/verify-ix-node/ 検証手順。drive は 127.0.0.1 を起動する
 .cursor/settings.json          pstack を有効にする
 fixtures/guardrails/           検査を破る見本。ビルド対象外

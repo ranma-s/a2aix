@@ -1,0 +1,42 @@
+name: 不具合 / Bug
+description: 土台のコードや文書の欠陥。脆弱性は公開の Issue に書かないでください。
+title: "[bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        実験的なソフトウェアです。本番では使わないでください。セキュリティ監査は、まだありません。
+
+        Experimental software. Do not use it in production. There has not been a security audit.
+
+        脆弱性は、この Issue に書かず [SECURITY.md](https://github.com/ranma-s/a2aix/blob/main/SECURITY.md) の非公開報告を使ってください。
+
+        Do not describe a vulnerability here. Use the private report in SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 何が起きたか / What happened
+      description: 期待と違う動きを、日本語か英語で書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待したこと / What you expected
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: コミット / Commit
+      description: `git rev-parse HEAD` の値。main 以外ならブランチ名も。
+      placeholder: abcdef0
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: 走らせたチェック / Checks you ran
+      description: "`pnpm check` の結果があれば貼ってください。適合テストが緑でも、6項目すべてに合格したことにはなりません（4項目は範囲つきの合格、2項目は未実施）。"
+    validations:
+      required: false
