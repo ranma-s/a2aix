@@ -53,9 +53,9 @@ function toJson(value: unknown): JsonValue {
   return null;
 }
 
-async function sealedMessages(): Promise<{ readonly job: JsonValue; readonly sealed: TermMessage[] }> {
+async function sealedMessages(jobExpiry: { readonly value: JsonValue } | null = { value: "2026-11-10T00:00:00.000Z" }): Promise<{ readonly job: JsonValue; readonly sealed: TermMessage[] }> {
   const preset = [{ termId: "ix:deliverable-format", value: ["text/html"] }];
-  const job = { jobId: "j", sheetId: "ix:core", sheetVersion: 1, sheetSha256: await termSheetHash(coreSheet), preset, roundLimitPerTerm: 3 };
+  const job = { jobId: "j", sheetId: "ix:core", sheetVersion: 1, sheetSha256: await termSheetHash(coreSheet), preset, roundLimitPerTerm: 3, description: "a job", ...(jobExpiry === null ? {} : { expiresAt: jobExpiry.value }) };
   const opened = openTermSession({ jobId: "j", sheet: coreSheet, sheetSha256: job.sheetSha256, preset, roundLimitPerTerm: 3, anchorHash: await termHash(job) });
   if (!opened.ok) {
     throw new Error(opened.reason);
@@ -276,5 +276,19 @@ describe("independent term transcript verification", () => {
     const { job, sealed } = await sealedMessages();
     const late = await toEvents(job, sealed, { createdAt: (index) => (index === 0 ? "2026-11-04T00:00:00.000Z" : at) });
     expect((await verifyTermTranscript({ jobId: "j", events: late, issuers, approvers, profile })).deadlines).toBe("fail");
+  });
+
+  it("fails deadlines when a message is published at or after the job's expiry, or the job has no usable expiresAt", async () => {
+    const early = await sealedMessages({ value: "2026-11-03T00:00:00.000Z" });
+    const expired = await verifyTermTranscript({ jobId: "j", events: await toEvents(early.job, early.sealed), issuers, approvers, profile });
+    expect(expired.deadlines).toBe("fail");
+    expect(expired.detail).toMatch(/job's expiry/);
+    const justAfter = await sealedMessages({ value: "2026-11-03T00:00:00.001Z" });
+    expect((await verifyTermTranscript({ jobId: "j", events: await toEvents(justAfter.job, justAfter.sealed), issuers, approvers, profile })).deadlines).toBe("pass");
+    for (const value of [null, { value: 5 }, { value: "not a date" }]) {
+      const bad = await sealedMessages(value);
+      const report = await verifyTermTranscript({ jobId: "j", events: await toEvents(bad.job, bad.sealed), issuers, approvers, profile });
+      expect(report.deadlines).toBe("fail");
+    }
   });
 });
