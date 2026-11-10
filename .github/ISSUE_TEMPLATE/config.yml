@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 脆弱性の非公開報告 / Private vulnerability report
+    url: https://github.com/ranma-s/a2aix/security/advisories/new
+    about: 公開の Issue には書かないでください。Do not file a public issue for a vulnerability. See SECURITY.md.
+  - name: 短い標準の文書 / The short standard
+    url: https://github.com/ranma-s/a2aix/blob/main/docs/spec/ix-standard.md
+    about: コードと決定の記録から書き写した、いまの動きの説明です。食い違いを見つけたら Issue に書いてください。
