@@ -62,6 +62,10 @@ Not built: wire A2A, mandate documents, a real human approval app, the way a per
 
 役割は [`docs/team.md`](docs/team.md)、エージェント向けの規則は [`AGENTS.md`](AGENTS.md) です。
 
+文書や `decisions.tsv` にある `PR #N` は、非公開の旧リポジトリ（`a2aix-old`）の PR の番号です。このリポジトリの PR とは別です。
+
+The `PR #N` references in the docs and in `decisions.tsv` are pull requests of the private former repository (`a2aix-old`). They are not pull requests of this repository.
+
 ## 参加する / How to contribute
 
 手順は [`CONTRIBUTING.md`](CONTRIBUTING.md)、行動規範は [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) です。仕様の議論と不具合は GitHub の Issue を使います。

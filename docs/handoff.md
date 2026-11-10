@@ -2,6 +2,8 @@
 
 One page for an agent starting a fresh session on IX. Read this, then `AGENTS.md`. The work queue is `docs/ops/queue.md`, roles and models are in `docs/ops/roles.md`, and the self-check before a PR is `docs/ops/checklist.md`. Open other files only when the task names them.
 
+A `PR #N` in the docs and in `decisions.tsv` is a pull request of the former private repository (`a2aix-old`), not of this one. This repository started from a rewritten history, and its own PR numbers start again at 1.
+
 ## What IX is
 
 An A2A extension for job exchange. Two agents (a poster and a worker) negotiate one typed term at a time over a relay, and two humans approve the agreement. Contracts and payment stay outside IX (D01). The aim is a small, simple standard that anyone in the world can implement. Do not over-build.
