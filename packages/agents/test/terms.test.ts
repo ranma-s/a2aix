@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { webSiteSheet } from "@ix/a2a-ext-negotiation";
-import type { TermJson } from "@ix/a2a-ext-negotiation";
+import { signatureVerification, valueHashVerification, webSiteSheet } from "@ix/a2a-ext-negotiation";
+import type { Party, TermJson, TermMessage } from "@ix/a2a-ext-negotiation";
 import { runTermTrial } from "../src/index.js";
-import type { TermMandate, TermTrialInput } from "../src/index.js";
+import type { TermDecider, TermMandate, TermTrialInput } from "../src/index.js";
 
 const clock = { now: () => "2026-11-03T00:00:00.000Z" };
 const sha = (digit: string): string => digit.repeat(64);
@@ -177,5 +177,65 @@ describe("mock agents negotiating term by term", () => {
     expect(() =>
       runTermTrial(trial({ worker: { party: "worker", mandate: { ...workerMandate, "ix:deadline": { kind: "deadline-from", zone: "America/Los_Angeles", ask: "2026-12-25T17:00:00-08:00", earliest: "2026-12-15T09:00:00Z" } }, human: "approve" } })),
     ).toThrow(/ix:deadline/);
+  });
+
+  describe("a caller-supplied decision hook", () => {
+    const yen = (amount: number): TermJson => ({ amount, currency: "JPY", taxIncluded: true });
+    const envelope = (from: Party) => ({
+      from,
+      sentAt: "2026-11-03T00:00:00.000Z",
+      expiresAt: "2026-11-04T00:00:00.000Z",
+      prevHash: "unverified",
+      signature: { verification: signatureVerification, material: "unverified" },
+    });
+    const propose = (from: Party, amount: number): TermMessage => ({ ...envelope(from), type: "TermPropose", termId: "ix:price", value: yen(amount) });
+    const once = (message: TermMessage): TermDecider => {
+      let used = false;
+      return () => {
+        if (used) {
+          return undefined;
+        }
+        used = true;
+        return { message };
+      };
+    };
+    const withDecide = (decide: TermDecider, mandate: TermMandate = workerMandate): TermTrialInput =>
+      trial({ worker: { party: "worker", mandate, human: "approve", decide } });
+
+    it("sends a move that is inside the mandate", () => {
+      const result = runTermTrial(withDecide(once(propose("worker", 200000))));
+      expect(result.escalations).toEqual([]);
+      const first = result.transcript[0];
+      expect(first?.type).toBe("TermPropose");
+      expect(first?.from).toBe("worker");
+    });
+
+    it("turns a proposal outside the mandate into an escalation and sends nothing", () => {
+      const result = runTermTrial(withDecide(once(propose("worker", 100000))));
+      expect(result.escalations).toEqual([{ party: "worker", termId: "ix:price", reason: "outside_mandate" }]);
+      expect(result.transcript).toEqual([]);
+    });
+
+    it("refuses a term the mandate does not cover", () => {
+      const withoutPrice: TermMandate = Object.fromEntries(Object.entries(workerMandate).filter(([termId]) => termId !== "ix:price"));
+      const result = runTermTrial(withDecide(once(propose("worker", 200000)), withoutPrice));
+      expect(result.escalations).toEqual([{ party: "worker", termId: "ix:price", reason: "not_in_mandate" }]);
+    });
+
+    it("refuses a move sent in the other party's name", () => {
+      const result = runTermTrial(withDecide(once(propose("client", 200000))));
+      expect(result.escalations).toEqual([{ party: "worker", termId: "", reason: "wrong_party" }]);
+      expect(result.transcript).toEqual([]);
+    });
+
+    it("does not let the hook accept a value outside the mandate", () => {
+      const accept: TermDecider = (session) => {
+        const price = session.terms.find((term) => term.definition.termId === "ix:price");
+        return price?.status === "proposed" ? { message: { ...envelope("worker"), type: "TermAccept", termId: "ix:price", valueHash: valueHashVerification } } : undefined;
+      };
+      const result = runTermTrial(withDecide(accept));
+      expect(result.escalations).toEqual([{ party: "worker", termId: "ix:price", reason: "outside_mandate" }]);
+      expect(result.session.phase).toBe("negotiating");
+    });
   });
 });
