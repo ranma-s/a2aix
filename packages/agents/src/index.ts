@@ -12,11 +12,13 @@ export { checkTermLimit, checkTermMandate, runTermTrial, withinLimit } from "./t
 export type {
   HumanDecision as TermHumanDecision,
   TermAgentConfig,
+  TermDecider,
   TermLimit,
   TermMandate,
   TermTrialEscalation,
   TermTrialInput,
   TermTrialResult,
+  Turn as TermTurn,
 } from "./terms.js";
 export { createTermSide, createTermSigner, createTermSigners, expectedSignerOf, findTermSheet, knownTermSheets, peersOf, peersProblem, runTermRelay, signTermMessage, termJobAnchor } from "./term-relay.js";
 export type { TermJob, TermParties, TermPeers, TermRelayReport, TermSideHandle, TermSideReport, TermSigners } from "./term-relay.js";

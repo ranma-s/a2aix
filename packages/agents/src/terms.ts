@@ -37,10 +37,13 @@ export type TermMandate = {
 
 export type HumanDecision = "approve" | "reject";
 
+export type TermDecider = (session: TermSession, clock: Clock) => Turn | undefined;
+
 export type TermAgentConfig = {
   readonly party: Party;
   readonly mandate: TermMandate;
   readonly human: HumanDecision;
+  readonly decide?: TermDecider;
 };
 
 export type TermTrialInput = {
@@ -58,7 +61,7 @@ export type TermTrialInput = {
 export type TermTrialEscalation = {
   readonly party: Party;
   readonly termId: string;
-  readonly reason: "outside_mandate" | "not_in_mandate" | "documents_mismatch";
+  readonly reason: "outside_mandate" | "not_in_mandate" | "documents_mismatch" | "wrong_party";
 };
 
 export type TermTrialResult = {
@@ -304,7 +307,40 @@ function decideTerm(config: TermAgentConfig, term: TermState, clock: Clock): Tur
   }
 }
 
+function guardedTurn(config: TermAgentConfig, session: TermSession, turn: Turn | undefined): Turn | undefined {
+  const message = turn?.message;
+  if (turn === undefined || message === undefined) {
+    return turn;
+  }
+  const refuse = (termId: string, reason: TermTrialEscalation["reason"]): Turn => ({ escalation: { party: config.party, termId, reason } });
+  if (message.from !== config.party) {
+    return refuse("", "wrong_party");
+  }
+  if (message.type === "TermPropose" || message.type === "TermCounter") {
+    const limit = config.mandate[message.termId];
+    if (limit === undefined) {
+      return refuse(message.termId, "not_in_mandate");
+    }
+    return withinLimit(limit, message.value) ? turn : refuse(message.termId, "outside_mandate");
+  }
+  if (message.type === "TermAccept") {
+    const term = session.terms.find((entry) => entry.definition.termId === message.termId);
+    if (term === undefined || term.status !== "proposed") {
+      return turn;
+    }
+    const limit = config.mandate[message.termId];
+    if (limit === undefined) {
+      return refuse(message.termId, "not_in_mandate");
+    }
+    return withinLimit(limit, term.value) ? turn : refuse(message.termId, "outside_mandate");
+  }
+  return turn;
+}
+
 export function nextTurn(config: TermAgentConfig, session: TermSession, clock: Clock): Turn | undefined {
+  if (config.decide !== undefined) {
+    return guardedTurn(config, session, config.decide(session, clock));
+  }
   const base = envelope(config.party, clock);
   if (session.phase === "awaiting_approval") {
     if (session.approvals.includes(config.party)) {
