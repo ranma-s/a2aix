@@ -17,6 +17,7 @@
     "job:check": "node --test scripts/ix-job.test.mjs",
     "bridge:check": "python3 -m unittest discover -s automation/bridge -p 'test_*.py'",
     "check": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm guardrails && pnpm test && pnpm conformance && pnpm job:check && pnpm bridge:check",
+    "build:browser": "node scripts/build-browser.mjs",
     "verify": "node scripts/verify-ix-node.mjs drive"
   },
   "devDependencies": {
