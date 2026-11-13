@@ -28,6 +28,14 @@ export default tseslint.config(
     },
   },
   {
+    files: ["scripts/browser/entry.mjs"],
+    languageOptions: {
+      globals: {
+        document: "readonly",
+      },
+    },
+  },
+  {
     files: typeFiles,
     extends: [eslint.configs.recommended, ...tseslint.configs.strictTypeChecked],
     languageOptions: {
