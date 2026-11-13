@@ -20,11 +20,12 @@
     "verify": "node scripts/verify-ix-node.mjs drive"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@ix/adapters": "workspace:*",
     "@ix/agents": "workspace:*",
     "@ix/jcs": "workspace:*",
     "@ix/verify": "workspace:*",
-    "@eslint/js": "^10.0.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "globals": "^17.14.0",
     "tsx": "^4.23.15",
