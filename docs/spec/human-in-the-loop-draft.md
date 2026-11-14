@@ -2,7 +2,7 @@
 
 状態: **レビュー待ちの規則文**（Q11）。ディレクターの決定 D09（2026-11-14）を、仕様の本文（`ix-spec-v0.3.md` の「交渉の拡張仕様（案 v0.3）」）、`ix-standard.md`、`term-protocol-draft.md`、今のコードと読み合わせて、`ix-standard.md` に載せられる規則の形にしました。**コードはまだ変えていません。** 実装は Q12 です。`ix-standard.md` は「コードと `decisions.tsv` から書く」決まりなので、第7節の差分は Q12 の後で当てます。
 
-この文書は人の扉に当たります（第10節）。ディレクターとセキュリティレビュアーが読むまで、規則として使いません。Q11 で出た 10 の問いは D10 で、検証役の 9 件の指摘のうち判断が要る 3 点は D11 で、ディレクターが推奨のとおり決めました（第9節）。D11 を規則に入れる中で、新しく 4 点の問いが出ました（第11節）。第11節の答えによって、第2節の文が変わることがあります。
+この文書は人の扉に当たります（第10節）。ディレクターとセキュリティレビュアーが読むまで、規則として使いません。Q11 で出た 10 の問いは D10 で、検証役の 9 件の指摘のうち判断が要る 3 点は D11 で、ディレクターが推奨のとおり決めました（第9節）。D11 を規則に入れる中で出た 4 点は D12 で決めました（第11節）。**決める点は、もう残っていません。**
 
 ## 1. 方針（ディレクターの決定、D09。動かさない）
 
@@ -56,7 +56,7 @@ D(S(n)) = なし        それ以外（n = 0、awaiting_approval、agreed、no_d
 
 1. 候補 x は、次の両方を満たすとき**期限内**です。満たさないとき**遅れた**メッセージです。
    - `D(S(n))` がないか、`t(x) < D(S(n))`。
-   - `t(x) < J`（第11節の問い1）。
+   - `t(x) < J`（D12）。
 2. 次に当てはめるのは、期限内の候補のうち、中継の順で最初のものです。遅れた候補は、中継の順で先にあっても、選びません。
 3. 選んだ候補が交渉の機械か鎖の決まりで断られたときの扱いは、今のとおりです（検証は `replay`、鎖の決まりなら `chain` も不合格。代理人は拒否として記録）。
 4. 遅れたメッセージは当てはめず、**不合格にもしません**。検証は `late` として数え、代理人は拒否として記録します。ただし、同じ送り手が同じメッセージのあとに2つ出していれば、今のとおり `chain` の不合格です（T23、D03）。
@@ -71,7 +71,7 @@ D(S(n)) = なし        それ以外（n = 0、awaiting_approval、agreed、no_d
 1. メッセージの期限は、鎖の当てはめでは、2.2 の 5（`t(x) < expiresAt(x)`）だけで判断します。
 2. 代理人は、読んだときの自分の時計でそのメッセージが期限切れ（`expiresAt` ≤ 自分の時計）でも、鎖には当てはめます。ただし、**自分からはそれに応じて手を出しません**（そのメッセージに答える手を出さない）。読んだことと、自分の時計で期限切れだったことは、記録に残します。例外は 2.7a の `DealDecline` だけです。閉じるための手で、中身に答える手ではないからです。
 3. 代理人が自分の時計で依頼票の期限（J）を過ぎたと判断したときも、同じです。状態は鎖から作り（記録のため）、自分からは手を出しません（T21b は「手を出さない」決まりになります）。
-4. 検証が今 `createdAt` で行っている確かめ（メッセージの `createdAt` が自分の `expiresAt` 以降、`createdAt` が J 以降、T27）は、`deadlines` の不合格として残します。ただし、その確かめで、メッセージを当てはめから外すことはしません（第11節の問い2）。
+4. 検証が今 `createdAt` で行っている確かめ（メッセージの `createdAt` が自分の `expiresAt` 以降、`createdAt` が J 以降、T27）は、`deadlines` の不合格として残します。ただし、その確かめで、メッセージを当てはめから外すことはしません（D12）。代理人も、同じ確かめを記録に印として残し、当てはめは変えません。
 
 ### 2.5 閉じたかどうかの判定
 
@@ -99,7 +99,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 | `closedAt` | `closedBySilence` が `true` なら `silenceDeadline` と同じ。それ以外は `null` |
 | `lastHash`、`lastSentAt` | mn のハッシュと、mn の `sentAt` の文字列そのまま。n = 0 なら `null` |
 | `late` | 遅れたメッセージの数 |
-| `earlierWinner` | 期限内の枝分かれのうち、勝ったメッセージと負けたメッセージの送り手が違い、勝った方の `sentAt` が負けた方より早いものの数（4.1、第11節の問い4） |
+| `earlierWinner` | 期限内の枝分かれのうち、勝ったメッセージと負けたメッセージの送り手が違い、勝った方の `sentAt` が負けた方より早いものの数。手がかりで、不合格にはしない（4.1、D12） |
 
 場合ごとの値:
 
@@ -158,7 +158,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 
 1. **1 件ずつ飛ばすもの**（全体は止めない）:
    - 大きすぎるイベント（1 イベントの大きさの上限を超えるもの）。`oversized` として数える。
-   - 当事者でない発行者のイベントと、署名が合わないイベント。`outsiders` と `badSignatures` として数える（第11節の問い3）。
+   - 当事者でない発行者のイベントと、署名が合わないイベント。`outsiders` と `badSignatures` として数える（2.12、D12）。
    - 重複（今のとおり、T25b）。
 2. **当事者ごとに数えるもの**: メッセージの数の上限は、上の選別（発行者、署名、重複、大きさ）のあとに残ったメッセージを、当事者ごとに数えます。部外者のイベントは数に入りません。
 3. **持つ数を絞る**: 読む側は、同じ前のメッセージ（`prevHash`）を指す同じ当事者のメッセージを、2 つまでしか持ちません。2 つあれば二重送信（`chain` の不合格）が言えるので、3 つ目からは持たずに数えるだけにします（`excess`、当事者ごと）。鎖に当てはめたメッセージは、いつも持ちます。
@@ -166,13 +166,27 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 5. 片方の当事者が、小さい `id` のメッセージを大量に出しても、3 で同じ前のメッセージへの多数の手は数えるだけになり、上限に数えるのはその当事者の分だけです。上限が本物の鎖の長さより十分大きければ、本物の合意より前に上限に達しません。どこも指さないメッセージ（`prevHash` が鎖のどこにもない）を大量に出した場合は、今のとおり `chain` の不合格（T23）で、その当事者の分として上限に達することがあります。そのときも、`limitParty` がその当事者を指します。
 6. 数は Q12 で提案し、`decisions.tsv` に書きます（目安: 1 イベント 64 KiB、1 当事者あたり 10,000 メッセージ）。
 
+### 2.12 部外者のイベントと、署名が合わないイベント（D12）
+
+1. **部外者のイベント**: イベントの `issuer` が双方のエージェントのどちらでもない（`issuer` がない、文字列でない場合を含む）イベントは、1 件ずつ飛ばし、`outsiders` として数えます。
+2. **署名が合わないイベント**: `issuer` は当事者のエージェントでも、イベントの `sig` がその `did:key` で確かめられないイベントは、1 件ずつ飛ばし、`badSignatures` として数えます。だれでも当事者の名前を書けるので、こうしたイベントは当事者のものとは言えません。
+3. この 2 つは、**`issuers` と `signatures` の合否に影響しません**。当事者ごとのメッセージの数（2.11）にも入りません。重複の確かめ（T25b）は、イベントの署名を確かめたあとのイベントだけで行います。
+4. この 2 つのイベントは、どれも鎖に当てはめません。部外者のイベントの中身を、当事者のメッセージとして読むことはしません。中身が当事者の正しいメッセージの写しでも、同じです（本物のメッセージは、当事者が署名したイベントで届いたものだけを使います）。そのため、合意の判定（`agreed`）に影響しません。部外者が当事者のメッセージを出すことも、正直な記録を不合格にすることもできません。
+5. 今のとおり不合格にするもの（当事者のエージェントの鍵で署名されたイベントの中の不正は、その当事者の責任なので）:
+   - 4 つの `did:key`（双方のエージェントと承認者）がすべて違わない（`issuers`、T26）。
+   - 署名の合ったイベントで、メッセージの `from` が、そのイベントの `issuer` の当事者と違う（`issuers`）。
+   - 署名の合ったイベントで、依頼票が依頼する側からでない（`issuers`）。
+   - 署名の合ったイベントで、メッセージの `signature` がエージェントの鍵で（`TermApproval` なら承認者の鍵で）確かめられない（`signatures`、T25、T26）。そのメッセージは当てはめません。
+6. 代理人は、今も、部外者のイベントと署名が合わないイベントを拒否として記録し、使いません。これは検証の扱いと同じです。代理人も、同じ名前（`outsiders`、`badSignatures`）で数を記録に残します。
+
 ## 3. 検証の手順の追加分
 
 `ix-standard.md` 第10節の手順に、次を足します（差分は第7節）。
 
 - `verifyTermTranscript` は、任意の入力 `asOf` を取ります。形は 2.2 です。形が違えば呼び出しを断ります。
 - 手順2の前: 大きすぎるイベントは 1 件ずつ飛ばし、`oversized` で数える（2.11）。
-- 手順3: 当事者でない発行者のイベントと、署名が合わないイベントは、1 件ずつ飛ばし、`outsiders`、`badSignatures` で数える（第11節の問い3）。
+- 手順1: 4 つの名前がすべて違わなければ、今のとおり `issuers` の不合格。
+- 手順3: 当事者でない発行者のイベントと、署名が合わないイベントは、1 件ずつ飛ばし、`outsiders`、`badSignatures` で数える。`issuers` と `signatures` は不合格にしない（2.12）。署名の合ったイベントの中の不正（`from` の食い違い、メッセージの署名、承認者の鍵）は、今のとおり不合格にする。
 - 手順4: 依頼票が 7 つ以外の欄（`roundLimitPerTerm` を含む）を持てば `schema` の不合格。依頼票の `expiresAt` が 2.2 の形でなければ `schema` の不合格。
 - 手順5: `sentAt`、`expiresAt`、`createdAt` が 2.2 の形でない、または `sentAt` が自分の `expiresAt` より前でなければ `schema` の不合格。`createdAt` による `deadlines` の確かめは今のとおり行うが、そのメッセージを当てはめから外さない（2.4a の 4）。当事者ごとの数と `excess`（2.11）。
 - 手順6: 候補のうち期限内のもの（2.4）だけを、中継の順で選んで当てはめる。機械の期限の確かめには、メッセージ自身の `sentAt` を時刻として使う（2.4a）。遅れた候補は脇に置く。期限内の候補が2つ以上あれば、勝ち負けを見て `earlierWinner` を数える。
@@ -222,7 +236,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 | `asOf` がない | — | 閉じたと言わない | 締め切りと `jobExpiryFirst` を報告する |
 | 遅れたメッセージ | 拒否として記録 | `late` で数える | どちらも当てはめない |
 | 自分の時計で期限切れのメッセージ | 当てはめるが、それに答えない | 当てはめる | 段階は同じ |
-| `createdAt` が `expiresAt` や J 以降 | 当てはめる | 当てはめて `deadlines` を不合格にする | 段階は同じ。`deadlines` の印だけが違う（第11節の問い2） |
+| `createdAt` が `expiresAt` や J 以降 | 当てはめる | 当てはめて `deadlines` を不合格にする | 段階は同じ。代理人も同じ印を記録に残す（D12） |
 
 ### 4.3 今ある期限との関係
 
@@ -273,7 +287,9 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 | `decisions.tsv` T21 | 項目4: 1円離れた範囲は不成立で終わる | 終わり方が安全弁の `DealDecline`（理由 `declined`）になると T34 に書く | この PR |
 | `decisions.tsv` T21b | 代理人は依頼票の期限を読むとき、毎回の手の前、出す直前に確かめる。項目6: 項目ごとの往復の数が中継の対案の数と一致 | 期限の確かめは「手を出さない」決まりになり、当てはめは `t(x) < J` で決める（2.4a の 3、T36）。項目6の確かめは安全弁の N に替える（T34） | この PR |
 | `decisions.tsv` T23 | anchor は job のハッシュ | 規則は同じ。入力が 7 欄になると T34 に書く | この PR |
-| `decisions.tsv` T25 | 当事者でないイベントを拒否する | 検証では、1 件ずつ飛ばして数え、`issuers` を不合格にしない（第11節の問い3、T36） | この PR（決まり次第） |
+| `decisions.tsv` T25 | agents and verifyTermTranscript refuse events from neither party, events or messages whose signature does not verify against the named party | 検証では、部外者のイベントと、イベントの `sig` が合わないイベントは「1 件ずつ飛ばして数える」になり、`issuers` と `signatures` を不合格にしない。メッセージの `signature` が合わないものは、今のとおり `signatures` の不合格（2.12、D12、T37） | この PR |
+| `decisions.tsv` T25b | verify reads events like the agents; both drop a duplicate of an earlier verified event | 読み方は同じ。数える欄（`outsiders`、`badSignatures`、`oversized`、`excess`）が増え、代理人も同じ名前で数える（2.12、T37） | この PR |
+| `decisions.tsv` T26 | refuse an approval signed by the agent key, the other party's approver, or an outsider; refuse peers whose four names are not all different | 変えない。署名の合ったイベントの中の承認の署名と、4 つの名前の確かめは、今のとおり不合格にする（2.12 の 5） | この PR |
 | `decisions.tsv` T25c | 代理人はメッセージを自分の時計で判断し、検証は `createdAt` で判断する | 鎖の当てはめでは `t(x) < expiresAt(x)` だけ。代理人の時計は「答えない」、検証の `createdAt` は `deadlines` の印だけ（2.4a、D11、T36） | この PR |
 | `decisions.tsv` T27 | 検証は `createdAt` が J 以降のメッセージで `deadlines` を不合格にする | 印は残す。当てはめから外すのは `t(x) ≥ J` のとき（2.4 の 1、2.4a の 4、T36） | この PR |
 | `docs/ops/queue.md` Q11、Q12 | 「a message at or after the previous `sentAt` plus 24 hours is refused」 | 遅れたメッセージは当てはめず、不合格にもしない（2.4 の 4）。Q12 は規則の文章を指す | この PR |
@@ -297,7 +313,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 | --- | --- | --- |
 | `@ix/a2a-ext-negotiation` | `TermSession` と `openTermSession` から `roundLimitPerTerm` を外す。`TermState.counters` を外す（D10）。`termNoDealReasons` を `declined`、`rejected`、`silence` にする。時刻の形（2.2）を確かめる関数を出し、`checkMessageShape` で `sentAt` と `expiresAt` に使う。`applyTermMessage` の `expires <= now`（呼び出し側の時計による期限切れ）は、メッセージ自身の `sentAt` を時刻として使う形に変える（2.4a。`t(sentAt) < expiresAt` は形の確かめで済むので、呼び出し側の時計は期限の判断に使わない）。締め切りの式 `silenceDeadline(session)` と、期限内かを判定する関数（D と J）を出す | 時刻の形の端（小文字、4桁の小数、秒60、`-00:00`、時差なし、存在しない日付、`sentAt` ≥ `expiresAt`）。呼び出し側の時計が `expiresAt` を過ぎていても、当てはめが変わらないこと。`silenceDeadline` が `awaiting_approval` と n = 0 でないこと、`revise` のあと `revise` の時刻から測ること。24時間ちょうどは遅れ、1ミリ秒前は期限内。`t(x) ≥ J` は遅れ。往復の上限がないので、対案を何回続けても `no_deal` にならないこと |
 | `@ix/agents` | 依頼票を 7 欄にし、7 欄以外の欄（`roundLimitPerTerm` を含む）を持つ依頼票と、`expiresAt` の形が違う依頼票を拒否する。自分の時計による期限切れ（メッセージ、依頼票）は「当てはめるが答えない」にする（2.4a）。候補は期限内のものだけを選び、遅れたものは拒否として記録する。署名する `sentAt` で締め切りと J を確かめる（2.7 の 1）。2.7a のよみがえり（記録の書き足し、交渉中だけ条件つきの `DealDecline` 1 回、承認待ちは知らせるだけ）。2.11 の実装の上限（1 件ずつ飛ばす、当事者ごとに数える、2 つまで持つ）。2.6 の欄の記録。安全弁 N と M を `TermAgentConfig` に足し、模試の既定値を置く（今の試験と同じ N = 3）。`decide` の手にも安全弁と締め切りをかける。分岐の処理の n² を直す。`assistant-prompt` の往復の上限の文を消し、24時間の規則を書く。`sample-terms` から欄を消す。`term-injection` の `note-cannot-reset-rounds` を向け替える | 検証役の指摘1の例（x が遅配で、代理人の時計では期限切れ）で、代理人と検証が同じ段階、`lastHash`、`closedAt` になること。7 欄以外の欄を持つ依頼票と、時差のない `expiresAt` の依頼票の拒否。よみがえり: 交渉中で新しい締め切りの前なら `DealDecline` が 1 回だけ出ること、締め切りのあとなら何も出ないこと、合意案でよみがえったときは出ずに知らせるだけなこと、分岐になったときに二重送信にならないこと。中継が遅れたメッセージを先に並べても閉じないこと。遅れたメッセージが当てはめられないこと。締め切りを確かめた時刻と `sentAt` がずれても、遅れたメッセージを出さないこと。安全弁が N と M で `DealDecline` を出すこと、`decide` からの手にもかかること。安全弁なしでは完全自動で始めないこと |
-| `@ix/verify` | `asOf` を取り、形を確かめる。依頼票の 7 欄以外の欄と、時刻の形を `schema` で拒否。`createdAt` による `deadlines` の確かめは残し、当てはめから外さない（2.4a の 4）。期限内の候補だけを選び、機械の時刻にはメッセージの `sentAt` を使う。遅れたものを `late` で数え、不合格にしない。`earlierWinner` を数える。2.11 の上限（`oversized`、`outsiders`、`badSignatures`、`excess`、`limit`、`limitParty`）。手順8と 2.6 の欄すべて。候補を `prevHash` で引く | 代理人と同じイベントと同じ a で同じ結論（段階、`closedAt`、`lastHash`）になること（指摘1の例を含む）。`asOf` がないと閉じたと言わず、`silenceDeadline` を返すこと。a < D、D ≥ J（`jobExpiryFirst`）の各場合の欄。時差のない J で、機械の地域の設定によらず同じ結論か拒否になること。遅れたメッセージが記録を落とさないこと。遅れた二重送信は今のとおり `chain` が落ちること。部外者の大きいイベント 1 つでは `limit` にならないこと。当事者が小さい `id` のメッセージを大量に出しても、本物の合意より前に上限に達しないこと。上限に達したとき `limitParty` が原因の当事者を指すこと。さかのぼらせた期限内の枝分かれが勝つ例（4.1）で、記録は合格のまま `earlierWinner` が 1 になること |
+| `@ix/verify` | `asOf` を取り、形を確かめる。依頼票の 7 欄以外の欄と、時刻の形を `schema` で拒否。`createdAt` による `deadlines` の確かめは残し、当てはめから外さない（2.4a の 4）。期限内の候補だけを選び、機械の時刻にはメッセージの `sentAt` を使う。遅れたものを `late` で数え、不合格にしない。`earlierWinner` を数える。2.11 の上限（`oversized`、`outsiders`、`badSignatures`、`excess`、`limit`、`limitParty`）。手順8と 2.6 の欄すべて。候補を `prevHash` で引く | 代理人と同じイベントと同じ a で同じ結論（段階、`closedAt`、`lastHash`）になること（指摘1の例を含む）。`asOf` がないと閉じたと言わず、`silenceDeadline` を返すこと。a < D、D ≥ J（`jobExpiryFirst`）の各場合の欄。時差のない J で、機械の地域の設定によらず同じ結論か拒否になること。遅れたメッセージが記録を落とさないこと。遅れた二重送信は今のとおり `chain` が落ちること。部外者の大きいイベント 1 つでは `limit` にならないこと。当事者が小さい `id` のメッセージを大量に出しても、本物の合意より前に上限に達しないこと。上限に達したとき `limitParty` が原因の当事者を指すこと。さかのぼらせた期限内の枝分かれが勝つ例（4.1）で、記録は合格のまま `earlierWinner` が 1 になること。部外者のイベント（仕事のタグつき）が 1 件あっても、`issuers` が合格のまま `outsiders` が 1 になり、段階が変わらないこと。当事者の `issuer` を書いた署名の合わないイベントが、`signatures` を不合格にせず `badSignatures` が 1 になり、当てはめられないこと。部外者が当事者の正しいメッセージを写して自分で署名したイベントが、当てはめられず、合意の判定が変わらないこと。署名の合ったイベントで `from` が食い違うと今のとおり `issuers` が不合格になること、エージェントの鍵で署名された承認で今のとおり `signatures` が不合格になること |
 | `@ix/conformance` | 項目4の「1円離れた範囲」が安全弁の `DealDecline` で終わること。項目6の `note-cannot-reset-rounds` は、名前を残し、中身を「自由文で代理人の安全弁を外させようとしても N は変わらない」に向け替え、`term.counters` を使わない確かめにする（D10）。項目5に 24 時間の規則（代理人と中継の時計を別にして）を足す | 範囲の注記（limit）は変えない。項目1と2は `pending` のまま |
 | `scripts/`（ブラウザのページ、試しの証拠） | 依頼票の欄、ページの文、証拠の報告に 2.6 の欄と 2.11 の数。証拠の検証に `asOf` を渡す | `pnpm check` と、ページの手の試し |
 
@@ -324,13 +340,13 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 +- The **anchor** is the hash of the job object [T23]. The verifier hashes the job object exactly as published. The agents hash the job rebuilt from the seven fields they read (`jobId`, `sheetId`, `sheetVersion`, `sheetSha256`, `preset`, `description`, `expiresAt`) [T34]. Because a job with any other field is refused, the two anchors agree [T35].
 @@
 -The sender fills in these fields first, then signs. Messages are applied in chain order, not relay order. When two messages point at the same predecessor, the first in relay order continues the chain and the other is a **fork** that is never applied. The sender of a fork plays a move again from the new state [T23, D03].
-+The sender fills in these fields first, then signs. Messages are applied in chain order, not relay order. When two messages in time (section 6, Silence) point at the same predecessor, the first in relay order continues the chain and the other is a **fork** that is never applied. A late message is never chosen. The sender of a fork plays a move again from the new state [T23, D03, T33]. Relay order follows `id`, which the sender chooses, so a sender can make a backdated message in time win over the other side's honest reply; this is not prevented, and such forks are counted as `earlierWinner` [T36].
++The sender fills in these fields first, then signs. Messages are applied in chain order, not relay order. When two messages in time (section 6, Silence) point at the same predecessor, the first in relay order continues the chain and the other is a **fork** that is never applied. A late message is never chosen. The sender of a fork plays a move again from the new state [T23, D03, T33]. Relay order follows `id`, which the sender chooses, so a sender can make a backdated message in time win over the other side's honest reply; this is not prevented, and such forks are counted as `earlierWinner`, a hint that is not a failure [D12, T36].
 @@ 9. Deadlines
 -A message must not be published at or after its own `expiresAt`. The agents also check the job's expiry when they read the job, before every move, and just before publishing [T21b]. Until relay receipts exist, time is the sender's declaration: an agent judges a message against its own clock, and the verifier judges it against the `createdAt` the sender signed [T25c, D06].
-+A message must not be published at or after its own `expiresAt`. Until relay receipts exist, time is the sender's declaration [T25c, D06]. Applying messages to the chain uses neither a reader's clock nor `createdAt`: a message is applied only when its `sentAt` is before its own `expiresAt` and before the job's `expiresAt` [D11, T36]. An agent whose own clock is past a message's `expiresAt`, or past the job's `expiresAt`, still applies the message but does not answer it [D11, T21b, T36].
++A message must not be published at or after its own `expiresAt`. Until relay receipts exist, time is the sender's declaration [T25c, D06]. Applying messages to the chain uses neither a reader's clock nor `createdAt`: a message is applied only when its `sentAt` is before its own `expiresAt` and before the job's `expiresAt` [D11, D12, T36]. An agent whose own clock is past a message's `expiresAt`, or past the job's `expiresAt`, still applies the message but does not answer it [D11, T21b, T36].
 @@
 -The verifier also reads the job's `expiresAt`. `deadlines` fails for a negotiation message whose event `createdAt` is at or after that time, and for a job whose `expiresAt` is missing, not text, or not a date. The verifier judges only the `createdAt` the sender signed; it has no clock of its own [T27].
-+The verifier also reads the job's `expiresAt`. `deadlines` fails for a negotiation message whose event `createdAt` is at or after its own `expiresAt` or the job's `expiresAt`, and for a job whose `expiresAt` is missing or not in the required form. This flag does not remove the message from the chain [T27, D11, T36].
++The verifier also reads the job's `expiresAt`. `deadlines` fails for a negotiation message whose event `createdAt` is at or after its own `expiresAt` or the job's `expiresAt`, and for a job whose `expiresAt` is missing or not in the required form. This flag does not remove the message from the chain, and the agents record the same flag [T27, D11, D12, T36].
 +
 +The silence rule (section 6) uses only the `sentAt` values in the chain and J, except the reading instant: an agent uses its own clock, and the verifier uses the `asOf` its caller passes. An agent checks D and J against the very `sentAt` it signs, and does not send a message that would be late; it records the close instead [T33, T36]. If a message dated before the deadline arrives after the agent recorded the close, and the new state is `negotiating`, the agent sends one `DealDecline` when the new deadline has not passed by its own clock, and tells its human. If the new state is `awaiting_approval`, it only tells its human [D10, D11, T35, T36].
 @@ 10. Replay procedure
@@ -341,7 +357,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 +2. Skip each event over the size limit and count it as `oversized` [T36]. Sort the rest by `id`. An event that is not an object with an object `body` fails `schema`; this is checked before the tag filter. Of the rest, keep only those tagged with the job id and of the job or negotiation kind.
 @@
 -3. For each event: the issuer must be one of the two agents (`issuers`). Its `sig` must verify (`signatures`). Drop it if its signed content was already seen (`duplicates`).
-+3. For each event: if the issuer is neither agent, skip it and count it as `outsiders`; if its `sig` does not verify, skip it and count it as `badSignatures` [T36]. Drop it if its signed content was already seen (`duplicates`). Count the rest per party; keep at most two messages per party after the same predecessor and count the others as `excess`. When a party passes the message limit, stop reading that party and report `limit` with `limitParty`; `limit` is neither a pass nor a fail [D10, T36].
++3. For each event: if the issuer is neither agent, skip it and count it as `outsiders`; if its `sig` does not verify, skip it and count it as `badSignatures`. These events are never applied and do not affect `issuers` or `signatures`; a message `from` that does not match a verified event's issuer, or a message signature that does not verify against the agent (or the approver for `TermApproval`), still fails `issuers` or `signatures` [D12, T36, T37]. Drop it if its signed content was already seen (`duplicates`). Count the rest per party; keep at most two messages per party after the same predecessor and count the others as `excess`. When a party passes the message limit, stop reading that party and report `limit` with `limitParty`; `limit` is neither a pass nor a fail [D10, T36].
 @@
 -4. Job event: it must carry a `term-job` record from the client, and there must be only one. Check `sheetSha256` against a known sheet and the preset manifests, then open the session with the anchor set to the hash of the job.
 +4. Job event: it must carry a `term-job` record from the client, and there must be only one. A job with any field other than the seven, `roundLimitPerTerm` included, or an `expiresAt` not in the required form, fails `schema` [T34, D10, T35, T36]. Check `sheetSha256` against a known sheet and the preset manifests, then open the session with the anchor set to the hash of the job.
@@ -385,13 +401,13 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 +  これ以外の欄を持つ依頼票は拒否するので、2つの起点は一致します [T35]。
 @@
 -送り手は、これらの欄を先に埋めてから署名します。メッセージは中継の順ではなく、鎖の順に当てはめます。2つのメッセージが同じ前のメッセージを指したときは、中継の順で先のものが鎖を続け、もう一方は「枝分かれ」として当てはめません。枝分かれを出した側は、新しい状態から手を出し直します [T23, D03]。
-+送り手は、これらの欄を先に埋めてから署名します。メッセージは中継の順ではなく、鎖の順に当てはめます。期限内（第6節「返事の途絶え」）の2つのメッセージが同じ前のメッセージを指したときは、中継の順で先のものが鎖を続け、もう一方は「枝分かれ」として当てはめません。遅れたメッセージは選びません。枝分かれを出した側は、新しい状態から手を出し直します [T23, D03, T33]。中継の順は `id` で決まり、`id` は送り手が選ぶので、送り手は時刻をさかのぼらせた期限内のメッセージで、相手の正直な返事に勝てます。これは防げません。こうした枝分かれは `earlierWinner` として数えます [T36]。
++送り手は、これらの欄を先に埋めてから署名します。メッセージは中継の順ではなく、鎖の順に当てはめます。期限内（第6節「返事の途絶え」）の2つのメッセージが同じ前のメッセージを指したときは、中継の順で先のものが鎖を続け、もう一方は「枝分かれ」として当てはめません。遅れたメッセージは選びません。枝分かれを出した側は、新しい状態から手を出し直します [T23, D03, T33]。中継の順は `id` で決まり、`id` は送り手が選ぶので、送り手は時刻をさかのぼらせた期限内のメッセージで、相手の正直な返事に勝てます。これは防げません。こうした枝分かれは `earlierWinner` として数えます。手がかりで、不合格ではありません [D12, T36]。
 @@ 9. 期限
 -メッセージは、自分の `expiresAt` ちょうど、またはそのあとに出してはいけません。エージェントは、依頼票を読むとき、毎回の手の前、出す直前にも依頼票の期限を確かめます [T21b]。中継の受領印ができるまでは、時刻は送り手の申告です。エージェントは自分の時計で判断し、検証する側は送り手が署名した `createdAt` で判断します [T25c, D06]。
 +メッセージは、自分の `expiresAt` ちょうど、またはそのあとに出してはいけません。中継の受領印ができるまでは、時刻は送り手の申告です [T25c, D06]。鎖への当てはめには、読む側の時計も `createdAt` も使いません。メッセージを当てはめるのは、その `sentAt` が自分の `expiresAt` より前で、依頼票の `expiresAt` より前のときだけです [D11, T36]。エージェントは、自分の時計でメッセージの `expiresAt` や依頼票の `expiresAt` を過ぎていても、そのメッセージを当てはめます。ただし、それに答える手は出しません [D11, T21b, T36]。
 @@
 -検証する側も、依頼票の `expiresAt` を読みます。交渉のメッセージのイベントの `createdAt` が依頼票の期限ちょうど、またはそのあとなら、`deadlines` は不合格です。依頼票に `expiresAt` がない、文字列でない、日付として読めない場合も不合格です。検証する側が使うのは、送り手が署名した `createdAt` だけで、自分の時計は持ちません [T27]。
-+検証する側も、依頼票の `expiresAt` を読みます。交渉のメッセージのイベントの `createdAt` が、そのメッセージの `expiresAt` か依頼票の期限のちょうど、またはそのあとなら、`deadlines` は不合格です。依頼票に `expiresAt` がない場合、決まった形でない場合も不合格です。この印で、メッセージを鎖から外すことはしません [T27, D11, T36]。
++検証する側も、依頼票の `expiresAt` を読みます。交渉のメッセージのイベントの `createdAt` が、そのメッセージの `expiresAt` か依頼票の期限のちょうど、またはそのあとなら、`deadlines` は不合格です。依頼票に `expiresAt` がない場合、決まった形でない場合も不合格です。この印で、メッセージを鎖から外すことはしません。エージェントも同じ印を記録に残します [T27, D11, D12, T36]。
 +
 +返事の途絶えの規則（第6節）は、鎖の中の `sentAt` と J だけを使います。例外は読む一瞬で、エージェントは自分の時計を、検証する側は呼び出す側が渡す `asOf` を使います。エージェントは、署名する `sentAt` そのもので D と J を確かめ、遅れるメッセージは出しません。代わりに、閉じた記録を作ります [T33, T36]。閉じたと記録したあとに締め切り前の時刻のメッセージが届き、新しい状態が交渉中なら、新しい締め切りが自分の時計でまだ来ていなければ `DealDecline` を1回出し、人に知らせます。新しい状態が承認待ちなら、人に知らせるだけです [D10, D11, T35, T36]。
 @@ 10. 読み直しの手順
@@ -402,7 +418,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 +2. 大きさの上限を超えるイベントは1件ずつ飛ばし、`oversized` として数えます [T36]。残りを `id` の順に並べます。オブジェクトでないイベントや、`body` がオブジェクトでないイベントは、タグで絞る前に `schema` が不合格になります。残りのうち、その仕事の id のタグを持ち、依頼票か交渉の種類のものだけを残します。
 @@
 -3. 各イベントについて、送り手が双方のエージェントのどちらかであること（`issuers`）、`sig` が正しいこと（`signatures`）を確かめます。署名された中身がすでに出ていれば、重複として捨てます（`duplicates`）。
-+3. 各イベントについて、送り手が双方のエージェントのどちらでもなければ飛ばして `outsiders` として数え、`sig` が正しくなければ飛ばして `badSignatures` として数えます [T36]。署名された中身がすでに出ていれば、重複として捨てます（`duplicates`）。残りを当事者ごとに数えます。同じ前のメッセージのあとの同じ当事者のメッセージは2つまで持ち、それより多いものは `excess` として数えます。ある当事者が数の上限を超えたら、その当事者のそれ以上は読まず、`limit` と、原因の当事者 `limitParty` を報告します。`limit` は合格でも不合格でもありません [D10, T36]。
++3. 各イベントについて、送り手が双方のエージェントのどちらでもなければ飛ばして `outsiders` として数え、`sig` が正しくなければ飛ばして `badSignatures` として数えます。これらのイベントは当てはめず、`issuers` と `signatures` の合否に影響しません。署名の合ったイベントで、メッセージの `from` が送り手と違うとき、メッセージの署名がエージェントの鍵（`TermApproval` なら承認者の鍵）で確かめられないときは、今のとおり `issuers` か `signatures` の不合格です [D12, T36, T37]。署名された中身がすでに出ていれば、重複として捨てます（`duplicates`）。残りを当事者ごとに数えます。同じ前のメッセージのあとの同じ当事者のメッセージは2つまで持ち、それより多いものは `excess` として数えます。ある当事者が数の上限を超えたら、その当事者のそれ以上は読まず、`limit` と、原因の当事者 `limitParty` を報告します。`limit` は合格でも不合格でもありません [D10, T36]。
 @@
 -4. 依頼票のイベントは、依頼する側からの `term-job` の記録で、1つだけでなければなりません。既知の項目表と照らして `sheetSha256` を確かめ、あらかじめ入れた値の目録も確かめてから、依頼票のハッシュを起点にして交渉を開きます。
 +4. 依頼票のイベントは、依頼する側からの `term-job` の記録で、1つだけでなければなりません。7つ以外の欄（`roundLimitPerTerm` を含む）を持つ依頼票と、`expiresAt` が決まった形でない依頼票は、`schema` の不合格です [T34, D10, T35, T36]。既知の項目表と照らして `sheetSha256` を確かめ、あらかじめ入れた値の目録も確かめてから、依頼票のハッシュを起点にして交渉を開きます。
@@ -430,7 +446,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 2. **遅れたメッセージで記録が落ちる**（危険）: 今の検証は、当てはめに失敗したメッセージで `replay` を落とします。24 時間の規則をそのまま「断る」として入れると、締め切りのあとに1通出すだけで、正直な記録を不合格にできます。2.4 の 4 で、遅れたものは数えるだけにしました。
 3. **並べ替えで閉じさせる**（危険、一部は限界）: 中継の順で最初の候補を選ぶと、遅れたメッセージを正直な返事より先にできます。2.4 の 2 で、期限内のものだけを選ぶようにしました。ただし、時刻をさかのぼらせた期限内の枝分かれが勝てば、閉じさせられます。`id` は送り手が選ぶので、防げません（4.1、`earlierWinner`）。D03 の狭めなので、人の扉です。
 4. **代理人の時計で当てはめが変わる**（危険、D11 で解消）: 今のコードでは、代理人は自分の時計で期限切れのメッセージを当てはめず、検証は `createdAt` で判断するので、同じイベントと同じ a でも結論が分かれました。2.4a で、当てはめを時計と `createdAt` から切り離しました。
-5. **部外者 1 件で読み取りが止まる**（危険）: 上限で全体を止める形だと、部外者が大きなイベントを 1 件出すだけで、どの記録も `limit` になります。2.11 で、1 件ずつ飛ばし、当事者ごとに数える形にしました。今の検証では、部外者のイベントが `issuers` を不合格にすることも同じ危険で、第11節の問い3で聞いています。
+5. **部外者 1 件で読み取りが止まる**（危険）: 上限で全体を止める形だと、部外者が大きなイベントを 1 件出すだけで、どの記録も `limit` になります。2.11 で、1 件ずつ飛ばし、当事者ごとに数える形にしました。今の検証では、部外者のイベントが `issuers` を不合格にすることも同じ危険で、2.12 で、数えるだけにしました（D12）。
 6. **よみがえり**（限界）: 締め切りのあとに、締め切り前の時刻で出されたメッセージは、遅配と区別できません。待つ側の代理人の扱いを 2.7a で決めました（D10、D11）。
 7. **時刻の申告**（限界）: さかのぼらせると相手の締め切りを早められ、締め切り前の未来の時刻では、次の締め切りを最大でおよそ 2W まで延ばせます。受領印まで防げません。
 8. **本文の古い記述**: `ix-spec-v0.3.md` の「各実装が守るルール」2 と 7、514 行と 516 行、653 行、791 行。第5節で直します。
@@ -468,14 +484,17 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 
 - 不成立の理由を足し（`silence`）、減らす（`round_limit`）こと。
 - 依頼票の欄を外すこと。依頼票のハッシュ（anchor）の入力が 8 欄から 7 欄に変わること。
-- 検証の規則を足し、変えること（時刻の形、24 時間の規則、`asOf`、`late`、`earlierWinner`、2.11 の上限、当てはめから時計と `createdAt` を外すこと、部外者のイベントの扱い）。
+- 検証の規則を足し、変えること（時刻の形、24 時間の規則、`asOf`、`late`、`earlierWinner`、2.11 の上限、当てはめから時計と `createdAt` を外すこと）。
+- **署名の検証の扱いを変えること**（T25 の変更。部外者のイベントと、署名が合わないイベントを、検証で不合格にせず数えるだけにする。2.12、D12）。署名に触れるので、人の扉（署名）です。
 - 枝分かれの決まり（D03）を「期限内のものの中で」に狭めること（`prevHash` の規則に触れる）。
 
-D10 と D11 は、問いへの答えを決めたもので、この規則の文章を確認したものではありません。Q11 は、ディレクターとセキュリティレビュアーがこの文章を読むことを前提にします（まだ読まれていません）。Q12 は、それに加えて、書いた人とは別の検証役が見ることを前提にします。
+D10、D11、D12 は、問いへの答えを決めたもので、この規則の文章を確認したものではありません。Q11 は、ディレクターとセキュリティレビュアーがこの文章を読むことを前提にします（まだ読まれていません）。Q12 は、それに加えて、書いた人とは別の検証役が見ることを前提にします。
 
-## 11. ディレクターに聞きたいこと（D11 を規則に入れる中で出た点。推奨つき）
+## 11. 決まったこと（D12、2026-11-14）
 
-1. **依頼票の期限（J）を、当てはめでも `sentAt` で判断するか。** 推奨: する（`t(x) ≥ J` のメッセージは遅れたメッセージとして当てはめない。2.4 の 1）。D11 で当てはめから時計と `createdAt` を外したので、何か決まった値で J を判断しないと、依頼票の期限のあとの合意が、当てはめの上では通ってしまいます。
-2. **検証が今 `createdAt` で行っている期限の確かめ（T27 など）を、`deadlines` の印だけにして、当てはめからは外さないか。** 推奨: そうする（2.4a の 4）。外すために使うと、代理人（`createdAt` を使わない）と検証で段階が分かれ、D11 の目的に反します。代わりに、代理人も同じ印を記録に残します。
-3. **当事者でない発行者のイベントと、署名が合わないイベントを、検証で 1 件ずつ飛ばして数えるだけにし、`issuers` と `signatures` を不合格にしないか。** 推奨: そうする（2.11 の 1）。今の検証では、部外者が仕事のタグをつけたイベントを 1 件出すだけで、正直な記録の `issuers` が不合格になります（checklist 4 の「正直な記録を失敗させる」に当たる、前からの穴）。当事者のイベントの中で、メッセージの送り手やメッセージの署名が合わないときは、今のとおり不合格にします。T25 の「拒否する」を検証でどう表すかの変更なので、人の扉です。
-4. **`earlierWinner` を、不合格ではなく、手がかりの数として報告するか。** 推奨: そうする。正直な同時の返事でも、勝った方の `sentAt` が早いことはよくあるので、不合格にはできません。人が記録を見るときの手がかりにします。
+D11 を規則に入れる中で出た 4 点に、ディレクターが推奨のとおり答えました。どれも第2節から第10節の規則に入れてあります。**決める点は、もう残っていません。**
+
+1. **依頼票の期限（J）も、当てはめでは `sentAt` で判断する。** `t(x) ≥ J` のメッセージは、遅れたメッセージとして当てはめません（2.4 の 1）。
+2. **検証の `createdAt` による期限の確かめ（T27 など）は、`deadlines` の印だけにして、当てはめからは外さない。** 代理人も同じ印を記録に残します（2.4a の 4）。
+3. **部外者のイベントと、署名が合わないイベントは、検証で 1 件ずつ飛ばして数えるだけにし、`issuers` と `signatures` の不合格にしない。** 署名の合ったイベントの中の不正は、今のとおり不合格にします。T25 の変更で、人の扉（署名）です（2.12）。
+4. **`earlierWinner` は、不合格ではなく、手がかりの数として報告する**（2.6、4.1）。
