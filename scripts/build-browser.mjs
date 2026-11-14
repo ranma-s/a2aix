@@ -53,6 +53,9 @@ const page = `<!doctype html>
 <table><thead><tr><th>項目</th><th>状態</th><th>値</th></tr></thead><tbody id="client-terms"></tbody></table>
 <h3>次にできる手</h3>
 <ul id="client-moves"></ul>
+<h3>アシスタントに渡す文章</h3>
+<p><button id="client-prompt-copy">文章をコピー</button> <span id="client-prompt-note" role="status"></span></p>
+<pre id="client-prompt" style="white-space:pre-wrap;max-height:16rem;overflow:auto;border:1px solid #999;padding:.4rem"></pre>
 <h3>アシスタントの返事を貼る</h3>
 <textarea id="client-paste" rows="6" placeholder="アシスタントの返事をそのまま貼ってください。最初の JSON オブジェクトだけを読みます。"></textarea>
 <p><button id="client-send">手を送る</button> <button id="client-draft">合意案を出す</button></p>
@@ -68,6 +71,9 @@ const page = `<!doctype html>
 <table><thead><tr><th>項目</th><th>状態</th><th>値</th></tr></thead><tbody id="worker-terms"></tbody></table>
 <h3>次にできる手</h3>
 <ul id="worker-moves"></ul>
+<h3>アシスタントに渡す文章</h3>
+<p><button id="worker-prompt-copy">文章をコピー</button> <span id="worker-prompt-note" role="status"></span></p>
+<pre id="worker-prompt" style="white-space:pre-wrap;max-height:16rem;overflow:auto;border:1px solid #999;padding:.4rem"></pre>
 <h3>アシスタントの返事を貼る</h3>
 <textarea id="worker-paste" rows="6" placeholder="アシスタントの返事をそのまま貼ってください。最初の JSON オブジェクトだけを読みます。"></textarea>
 <p><button id="worker-send">手を送る</button></p>
