@@ -2,7 +2,7 @@
 
 状態: **レビュー待ちの規則文**（Q11）。ディレクターの決定 D09（2026-11-14）を、仕様の本文（`ix-spec-v0.3.md` の「交渉の拡張仕様（案 v0.3）」）、`ix-standard.md`、`term-protocol-draft.md`、今のコードと読み合わせて、`ix-standard.md` に載せられる規則の形にしました。**コードはまだ変えていません。** 実装は Q12 です。`ix-standard.md` は「コードと `decisions.tsv` から書く」決まりなので、第7節の差分は Q12 の後で当てます。
 
-この文書は人の扉に当たります（第10節）。ディレクターとセキュリティレビュアーが読むまで、規則として使いません。決まっていない点は、第9節に推奨つきで並べました。第9節の答えによって、第2節の文が変わることがあります。
+この文書は人の扉に当たります（第10節）。ディレクターとセキュリティレビュアーが読むまで、規則として使いません。**決める点は、もう残っていません。** Q11 で出た 10 の問いは、ディレクターが 2026-11-14 に推奨のとおり決めました（D10、第9節）。その答えは、第2節から第8節の規則の文章に入れてあります。
 
 ## 1. 方針（ディレクターの決定、D09。動かさない）
 
@@ -43,9 +43,9 @@ D(S(n)) = t(mn) + W   ただし n ≥ 1 かつ phase(S(n)) = negotiating のと�
 D(S(n)) = なし        それ以外（n = 0、awaiting_approval、agreed、no_deal）
 ```
 
-- n = 0（依頼票だけで、まだメッセージがない）ときは、締め切りはありません。依頼票は掲載されて待つものだからです（第9節の問い1）。
+- n = 0（依頼票だけで、まだメッセージがない）ときは、締め切りはありません。依頼票は掲載されて待つものだからです（D10）。
 - `awaiting_approval` には、締め切りはありません。人が `revise` を出して `negotiating` に戻ったときは、その `TermApproval`（`revise`）が mn なので、締め切りはその `sentAt` から 24 時間です。
-- `sentAt` が前のメッセージより早くても（時刻が逆に並んでいても）、断りません。締め切りは、いつも「直前に適用されたメッセージ」の `sentAt` から測ります（第9節の問い4）。
+- `sentAt` が前のメッセージより早くても（時刻が逆に並んでいても）、断りません。締め切りは、いつも「直前に適用されたメッセージ」の `sentAt` から測ります（D10）。
 
 ### 2.4 次のメッセージの選び方と、遅れたメッセージ
 
@@ -69,7 +69,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 
 - 真なら、交渉は `no_deal`、理由 `silence`、閉じた一瞬は `D(S(終))` です。閉じる手（メッセージ）はありません。
 - `D(S(終)) ≥ J` のときは、依頼票の期限が先に来ます。`silence` とはせず、今のとおり依頼票の期限の規則で止まります（T21b、T27）。
-- 代理人の a は、読んだときの自分の時計です。検証の a は、呼び出す側が渡す値です（`asOf`）。`asOf` を渡さないときは、検証は閉じたとは言わず、段階は当てはめたとおり（`negotiating`）にして、締め切り `D(S(終))` を報告します（第9節の問い2）。
+- 代理人の a は、読んだときの自分の時計です。検証の a は、呼び出す側が渡す値です（`asOf`）。`asOf` を渡さないときは、検証は閉じたとは言わず、段階は当てはめたとおり（`negotiating`）にして、締め切り `D(S(終))` を報告します（D10）。中継の記録の中の一番遅い時刻を `asOf` の代わりに使うことはしません。未来の時刻を書いた 1 通で、早く閉じさせられるからです。
 - 同じイベントと同じ a なら、代理人と検証は同じ結論になります。違いが出るのは、a が違うとき（読んだ時刻が違う）と、見えているイベントが違うとき（中継が隠した、まだ届いていない）だけです。
 
 ### 2.6 記録
@@ -83,22 +83,34 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 
 1. 代理人は、自分の時計で `D(S(n))` ちょうど、またはそのあとに、交渉のメッセージを出してはなりません（出しても遅れたメッセージになり、当てはめられません）。代わりに、2.6 の記録を作って止まります。
 2. 代理人は、`sentAt` に自分の時計の今の時刻を書かなければなりません。
-3. 代理人は、自分が `silence` で閉じたと記録したあと、その交渉で自分から手を出しません。例外は第9節の問い3です。
+3. 代理人は、自分が `silence` で閉じたと記録したあと、その交渉で自分から手を出しません。ただし、次の 2.7a の場合だけ、`DealDecline` を 1 回出します。
 4. 毎回の手の前の確かめ（T21b の依頼票の期限）に、上の 1 を足します。
+
+### 2.7a 閉じたと記録したあとに、締め切り前の時刻のメッセージが届いたとき（D10）
+
+代理人が `silence` で閉じたと記録した（`lastHash` が h）あとに、中継の遅配か、時刻をさかのぼらせたメッセージで、期限内のメッセージが届くことがあります。式（2.3〜2.5）では、そのメッセージは当てはめられ、交渉は続きます（**よみがえり**）。このとき代理人は、次のとおりにします。
+
+1. 見えているイベントで、今のとおり鎖を当てはめ直し、新しい状態 S' を出す。2.6 の記録は消さず、`revived`（よみがえったこと、届いたメッセージのハッシュ、読んだ一瞬）を書き足す。そして、自分の人に知らせる。
+2. S' の段階が `negotiating` で、自分の時計の今が `D(S')` より前なら、`DealDecline` を出す。S' の段階が `awaiting_approval`（よみがえりのメッセージが合意案だった）なら、締め切りはないので、依頼票の期限の前であれば `DealDecline` を出す。
+3. S' の段階が `negotiating` で、自分の時計の今が `D(S')` ちょうど、またはそのあとなら、何も出さない。式のとおり、交渉は `D(S')` でまた `silence` として閉じている。その記録を 2.6 の形で書き足す。
+4. S' の段階が `no_deal` なら、何も出さない。`agreed` にはならない（自分の人の承認の署名がないと、合意にならない）。
+5. この `DealDecline` は、普通のメッセージと同じに作る。`sentAt` は自分の時計の今（2.7 の 2）、`expiresAt` は `sentAt` + W、`prevHash` は S' の最後のメッセージのハッシュ、`reason` は自由文（例: 「返事の途絶えで閉じたと記録したあとに届いたため、辞退します」）。機械は `reason` を読まない。依頼票の期限の前でなければ出さない（T21b）。
+6. 1 つの交渉で、代理人がこの `DealDecline` を当てはめさせるのは 1 回だけ。当てはめられれば段階は `no_deal` になり、そのあとは手を出さない。相手のメッセージと同じ前のメッセージを指して分岐（fork）になり、当てはめられなかったときは、今の分岐の決まりのとおり、新しい状態からもう一度 1〜5 を判断する。同じ前のメッセージのあとに 2 つ出すことはしない（二重送信は `chain` の不合格になるため）。
+7. 検証の側からは、届いたメッセージのあとに、この代理人の普通の `DealDecline` が見え、段階は `no_deal`、理由は `declined` になる。2 の場合で `DealDecline` が出せなかったとき（3 の場合）は、`asOf` が `D(S')` 以降なら `silence`（`lastHash` は届いたメッセージのハッシュ）になる。代理人の手元の記録には、最初の `silence`（`lastHash` が h）と `revived` が残るので、検証の報告と見比べれば、遅配かさかのぼりがあったことが分かる。どちらだったかは、受領印ができるまで区別できない。
 
 ### 2.8 往復の上限をなくす
 
 1. 依頼票（`term-job` の `job`）の欄は、`jobId`、`sheetId`、`sheetVersion`、`sheetSha256`、`preset`、`description`、`expiresAt` の 7 つです。`roundLimitPerTerm` はありません。
 2. anchor は、今のとおり依頼票の `job` オブジェクトのハッシュです（T23）。代理人は 7 つの欄から作り直してハッシュし、検証は公開されたものをそのままハッシュします。
-3. `roundLimitPerTerm` を持つ依頼票（古い形）は、代理人も検証も拒否します（検証は `schema` の不合格）。7 つ以外の欄も拒否するかは、第9節の問い5です。
-4. 交渉の機械は、往復を数えません。`round_limit` は不成立の理由からなくなり、理由は `declined`、`rejected`、`silence` の 3 つです。往復の上限を超えた任意の項目を外す規則もなくなります。
+3. `roundLimitPerTerm` を持つ依頼票（古い形）を含め、7 つ以外の欄を持つ依頼票は、代理人も検証も拒否します（検証は `schema` の不合格。D10）。これで、余分な欄による代理人と検証の anchor の食い違いがなくなります。
+4. 交渉の機械は、往復を数えません。項目ごとの往復の数（`counters`）も、機械の状態から外します（D10）。`round_limit` は不成立の理由からなくなり、理由は `declined`、`rejected`、`silence` の 3 つです。依頼票の期限切れは、理由にしません（D10。今のとおり、期限で止まり、段階はそのまま）。往復の上限を超えた任意の項目を外す規則もなくなります。
 5. 交渉は、`DealDecline`、`silence`、人の `reject`、依頼票の期限のどれかが来るまで続きます。
 
 ### 2.9 完全に自動で取引するときの安全弁（代理人の設定。プロトコルではない）
 
 1. 代理人は、次の設定を持てます。
    - **対案の数 N**: 1 つの項目で、その項目が最後に `open` になってから数えた `TermCounter`（双方の分）が N に達したあと、さらに対案を出す番が来たら、対案の代わりに `DealDecline` を出す。
-   - **メッセージの数 M**（推奨）: 1 つの交渉で、双方のメッセージの合計が M に達したら、`DealDecline` を出す。`TermAdd` などを片方が出し続ける場合への備えです。
+   - **メッセージの数 M**: 1 つの交渉で、双方のメッセージの合計が M に達したら、`DealDecline` を出す。`TermAdd` などを片方が出し続ける場合への備えです（D10）。参照実装は、N と M の両方を持ちます。
 2. 人が毎回判断する使い方では、設定は要りません。人が止め役です。
 3. 人が判断しない、完全に自動の使い方では、代理人は N（と M）が決まっていなければ始めてはなりません。これは参照実装の決まりで、プロトコルの決まりではありません。
 4. 安全弁の `DealDecline` は、普通の `DealDecline` です。理由の文は自由文で、機械は読みません。相手には、安全弁で断ったのか、人が断ったのかは分かりません。
@@ -107,17 +119,24 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 
 今のとおりです（T29）。`decide` を通った手でも、委任の外の提案、対案、受け入れは送らず、人に戻します（`outside_mandate`）。24 時間の規則も、往復の上限の撤廃も、これを変えません。
 
+### 2.11 読む側の実装の上限（D10。プロトコルではない）
+
+1. 参照実装の代理人と検証は、1 イベントの大きさ、1 交渉のメッセージ数、足した項目の数に、上限を持ちます。入れ子 64 と同じく、これはこの実装の上限で、プロトコルの決まりではありません。
+2. 上限を超えたら、そこで読むのをやめ、「上限で止めた」（`limit`）と報告します。`schema` などの不合格とは分けます。上限で止めた報告は、その交渉が正しいとも、正しくないとも言いません。
+3. 数は Q12 で提案し、`decisions.tsv` に書きます（目安: 1 イベント 64 KiB、1 交渉 10,000 メッセージ）。
+
 ## 3. 検証の手順の追加分
 
 `ix-standard.md` 第10節の手順に、次を足します（差分は第7節）。
 
 - `verifyTermTranscript` は、任意の入力 `asOf`（RFC 3339 の一瞬。2.2 と同じ形）を取ります。
-- 手順4: 依頼票が `roundLimitPerTerm` を持てば `schema` の不合格。
+- 手順4: 依頼票が 7 つ以外の欄（`roundLimitPerTerm` を含む）を持てば `schema` の不合格。
 - 手順5: `sentAt` が 2.2 の形でない、または `sentAt` が自分の `expiresAt` より前でなければ `schema` の不合格。
 - 手順6: 候補のうち期限内のもの（2.4）だけを、中継の順で選んで当てはめる。遅れた候補は脇に置く。
 - 手順7: 残ったメッセージのうち、それが指す状態から見て遅れたものは、同じ送り手の二重送信でない限り `late` として数え、`chain` を不合格にしない。二重送信なら今のとおり `chain` の不合格。
 - 手順8（新）: 最後の状態で 2.5 の式を計算する。`asOf` があり、式が真なら、段階を `no_deal`、理由を `silence` として報告し、2.6 の欄を返す。`asOf` がなければ `silenceDeadline` だけを返す。
 - 報告に `late`（数）と `silence`（欄）を足す。
+- 実装の上限（2.11）に達したら、読むのをやめ、`limit` を報告する。不合格とは分ける。
 
 ## 4. 本文との読み合わせ（Q11 の問い 1〜5）
 
@@ -138,7 +157,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 
 - **自分のメッセージの時刻を遅らせて書く（未来の時刻）**: その手は遅れたメッセージになり、無視されるだけです。閉じるかどうかは a で決まるので、未来の時刻で早く閉じさせることはできません。前のメッセージの時刻より後でなければならない、という決まりを置かないので、相手の正直な返事が「時刻が逆」として断られることもありません。
 - **自分の返事の時刻をさかのぼらせて書く**: 相手の締め切りが早まります。極端には、相手の前のメッセージの直後の時刻を書き、実際には 24 時間近く待ってから出すと、相手にはほとんど時間が残らず、`silence` で閉じます。これは、その送り手が `DealDecline` を出すのと同じ結果で、送り手はいつでも断れるので、新しく得るものは「理由が `silence` になる」ことだけです。記録の最後のメッセージはさかのぼらせた側のものなので、黙ったのはもう片方に見えます。代理人は、受け取ったメッセージの `sentAt` が自分の時計より大きくずれていれば、記録して人に見せるべきです（代理人の設定。プロトコルではない）。中継の受領印（段階4、見送り中）ができるまで、これ以上は防げません。
-- **締め切りのあとに、締め切り前の時刻で出す（よみがえらせる）**: 式では期限内なので当てはめられ、交渉が続きます。正直な遅配（中継が遅れて届けた）と区別できません。待つ側の代理人がすでに閉じたと記録していれば、記録と検証の報告が食い違います。合意を偽造することはできません（待つ側の人の承認の署名が要る）。扱いは第9節の問い3です。
+- **締め切りのあとに、締め切り前の時刻で出す（よみがえらせる）**: 式では期限内なので当てはめられ、交渉が続きます。正直な遅配（中継が遅れて届けた）と区別できません。合意を偽造することはできません（待つ側の人の承認の署名が要る）。待つ側の代理人は、新しい締め切りの前なら `DealDecline` を 1 回出して人に知らせ、締め切りが過ぎていれば何も出しません（2.7a、D10）。どちらの場合も、記録ははっきり `declined` か `silence` で終わります。
 - **自分でメッセージを出し続けて閉じさせない**: 「最後の打診」は種類を問わないので、片方が出し続ければ閉じません。D09 のとおりで、もう片方はいつでも `DealDecline` で閉じられます。
 
 ### 4.2 代理人と検証が同じ結論になるか（checklist 2）
@@ -180,7 +199,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 - **片方だけでメッセージを増やす**: `TermAdd` で新しい項目を足し続けることは、前から上限がありませんでした（往復の上限は対案だけを数えていた）。メッセージの数の安全弁 M（2.9）で自分の側は止められます。
 - **巨大な値**: 今の守りは、入れ子 64 まで、安全な整数、厳しい読み取り（T19b）です。イベントの大きさと配列の長さには上限がありません（AGENTS.md: 配列の幅に上限はない）。
 - **計算の量**: 検証は、毎回、残りの候補を探すので、メッセージ数 n に対して n² の手間です。代理人は、分岐を落とすたびに鎖全体のハッシュを計算し直します（`dropForks` の `chainedHashes`）。往復が無制限になると、これが攻撃に使えます。
-- **考え方**: プロトコルには上限を入れません（D09）。読む側の実装の上限（1 イベントの大きさ、1 交渉のメッセージ数、足した項目の数）は、入れ子 64 と同じく「この実装の上限」として持ち、超えたら「上限で読むのをやめた」と報告して、プロトコル違反（不合格）とは分けます（第9節の問い6）。計算の量は Q12 で直します（候補を `prevHash` で引けるようにし、鎖のハッシュを使い回す）。
+- **考え方**: プロトコルには上限を入れません（D09）。読む側の実装の上限（1 イベントの大きさ、1 交渉のメッセージ数、足した項目の数）は、入れ子 64 と同じく「この実装の上限」として持ち、超えたら「上限で読むのをやめた」と報告して、プロトコル違反（不合格）とは分けます（2.11、D10）。計算の量は Q12 で直します（候補を `prevHash` で引けるようにし、鎖のハッシュを使い回す）。
 
 ### 4.5 安全弁をプロトコルの外に置くことの書き方と限界
 
@@ -217,10 +236,10 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 
 | パッケージ | 直すこと | テスト（それぞれ、検査を外すと落ちること） |
 | --- | --- | --- |
-| `@ix/a2a-ext-negotiation` | `TermSession` と `openTermSession` から `roundLimitPerTerm` を外す。`TermState.counters` を外す（第9節の問い8）。`termNoDealReasons` を `declined`、`rejected`、`silence` にする。`sentAt` の形（2.2）を `checkMessageShape` で確かめる。締め切りの式 `silenceDeadline(session)` と、期限内かを判定する関数を出す | `sentAt` の形の端（小文字、4桁の小数、秒60、`-00:00`、存在しない日付、`sentAt` ≥ `expiresAt`）。`silenceDeadline` が `awaiting_approval` と n = 0 でないこと、`revise` のあと `revise` の時刻から測ること。24時間ちょうどは遅れ、1ミリ秒前は期限内。往復の上限がないので、対案を何回続けても `no_deal` にならないこと |
-| `@ix/agents` | 依頼票を 7 欄にし、`roundLimitPerTerm` を持つ依頼票を拒否する。候補は期限内のものだけを選び、遅れたものは拒否として記録する。毎回の手の前と出す直前に締め切りを確かめ、過ぎていれば 2.6 の記録を作って止まる。安全弁 N と M を `TermAgentConfig` に足し、模試の既定値を置く（今の試験と同じ N = 3）。`decide` の手にも安全弁と締め切りをかける。分岐の処理の n² を直す。`assistant-prompt` の往復の上限の文を消し、24時間の規則を書く。`sample-terms` から欄を消す | 古い形の依頼票の拒否。中継が遅れたメッセージを先に並べても閉じないこと。遅れたメッセージが当てはめられないこと。締め切りを過ぎた代理人が手を出さないこと。安全弁が N で `DealDecline` を出すこと、`decide` からの手にもかかること。安全弁なしでは完全自動で始めないこと |
-| `@ix/verify` | `asOf` を取る。依頼票の `roundLimitPerTerm` を `schema` で拒否。`sentAt` の形。期限内の候補だけを選ぶ。遅れたものを `late` で数え、不合格にしない。手順8と報告の欄。候補を `prevHash` で引く | 代理人と同じイベントと同じ a で同じ結論（`silence`、`closedAt`、`lastHash`）になること。`asOf` がないと閉じたと言わないこと。遅れたメッセージが記録を落とさないこと。遅れた二重送信は今のとおり `chain` が落ちること。`D ≥ J` では `silence` にしないこと |
-| `@ix/conformance` | 項目4の「1円離れた範囲」が安全弁の `DealDecline` で終わること。項目6の `note-cannot-reset-rounds` を安全弁の N に向け替える（第9節の問い9）。項目5に 24 時間の規則（代理人と中継の時計を別にして）を足す | 範囲の注記（limit）は変えない。項目1と2は `pending` のまま |
+| `@ix/a2a-ext-negotiation` | `TermSession` と `openTermSession` から `roundLimitPerTerm` を外す。`TermState.counters` を外す（D10）。`termNoDealReasons` を `declined`、`rejected`、`silence` にする。`sentAt` の形（2.2）を `checkMessageShape` で確かめる。締め切りの式 `silenceDeadline(session)` と、期限内かを判定する関数を出す | `sentAt` の形の端（小文字、4桁の小数、秒60、`-00:00`、存在しない日付、`sentAt` ≥ `expiresAt`）。`silenceDeadline` が `awaiting_approval` と n = 0 でないこと、`revise` のあと `revise` の時刻から測ること。24時間ちょうどは遅れ、1ミリ秒前は期限内。往復の上限がないので、対案を何回続けても `no_deal` にならないこと |
+| `@ix/agents` | 依頼票を 7 欄にし、7 欄以外の欄（`roundLimitPerTerm` を含む）を持つ依頼票を拒否する。2.7a のよみがえりの扱い（記録の書き足し、条件つきの `DealDecline` 1 回、人への知らせ）。2.11 の実装の上限。候補は期限内のものだけを選び、遅れたものは拒否として記録する。毎回の手の前と出す直前に締め切りを確かめ、過ぎていれば 2.6 の記録を作って止まる。安全弁 N と M を `TermAgentConfig` に足し、模試の既定値を置く（今の試験と同じ N = 3）。`decide` の手にも安全弁と締め切りをかける。分岐の処理の n² を直す。`assistant-prompt` の往復の上限の文を消し、24時間の規則を書く。`sample-terms` から欄を消す | 7 欄以外の欄を持つ依頼票の拒否。よみがえり: 新しい締め切りの前なら `DealDecline` が 1 回だけ出ること、締め切りのあとなら何も出ないこと、合意案でよみがえったときも `DealDecline` が出ること、分岐になったときに二重送信にならないこと。実装の上限で止めたときに `limit` になり、不合格にならないこと。中継が遅れたメッセージを先に並べても閉じないこと。遅れたメッセージが当てはめられないこと。締め切りを過ぎた代理人が手を出さないこと。安全弁が N で `DealDecline` を出すこと、`decide` からの手にもかかること。安全弁なしでは完全自動で始めないこと |
+| `@ix/verify` | `asOf` を取る。依頼票の 7 欄以外の欄を `schema` で拒否。実装の上限と `limit` の報告。`sentAt` の形。期限内の候補だけを選ぶ。遅れたものを `late` で数え、不合格にしない。手順8と報告の欄。候補を `prevHash` で引く | 代理人と同じイベントと同じ a で同じ結論（`silence`、`closedAt`、`lastHash`）になること。`asOf` がないと閉じたと言わないこと。遅れたメッセージが記録を落とさないこと。遅れた二重送信は今のとおり `chain` が落ちること。`D ≥ J` では `silence` にしないこと |
+| `@ix/conformance` | 項目4の「1円離れた範囲」が安全弁の `DealDecline` で終わること。項目6の `note-cannot-reset-rounds` は、名前を残し、中身を「自由文で代理人の安全弁を外させようとしても N は変わらない」に向け替える（D10）。項目5に 24 時間の規則（代理人と中継の時計を別にして）を足す | 範囲の注記（limit）は変えない。項目1と2は `pending` のまま |
 | `scripts/`（ブラウザのページ、試しの証拠） | 依頼票の欄、ページの文、証拠の報告に `silence` と `late` | `pnpm check` と、ページの手の試し |
 
 ## 7. `ix-standard.md` の更新案（差分。Q12 の後に当てる）
@@ -230,7 +249,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 ```diff
 @@ 6. The negotiation machine
 -**Opening.** The poster publishes the job: `jobId`, `sheetId`, `sheetVersion`, `sheetSha256` (the hash of the sheet definition), preset values, `roundLimitPerTerm`, a description, and `expiresAt` [T19, T23]. Each preset term starts as `proposed` by the client.
-+**Opening.** The poster publishes the job: `jobId`, `sheetId`, `sheetVersion`, `sheetSha256` (the hash of the sheet definition), preset values, a description, and `expiresAt` [T19, T23, T34]. A job that carries `roundLimitPerTerm` is refused [T34]. Each preset term starts as `proposed` by the client.
++**Opening.** The poster publishes the job: `jobId`, `sheetId`, `sheetVersion`, `sheetSha256` (the hash of the sheet definition), preset values, a description, and `expiresAt` [T19, T23, T34]. A job that carries any other field, `roundLimitPerTerm` included, is refused [T34, D10, T35]. Each preset term starts as `proposed` by the client.
 @@
 -**Messages.** Every message carries `type`, `from`, `sentAt`, `expiresAt`, `prevHash`, and `signature` [T18, T23]. The types are:
 +**Messages.** Every message carries `type`, `from`, `sentAt`, `expiresAt`, `prevHash`, and `signature` [T18, T23]. `sentAt` is `YYYY-MM-DDTHH:MM:SS`, an optional fraction of one to three digits, and `Z` or `±HH:MM` (not `-00:00`), and it must be before the message's own `expiresAt` [T33]. The types are:
@@ -246,13 +265,13 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 -The sender fills in these fields first, then signs. Messages are applied in chain order, not relay order. When two messages point at the same predecessor, the first in relay order continues the chain and the other is a **fork** that is never applied. The sender of a fork plays a move again from the new state [T23, D03].
 +The sender fills in these fields first, then signs. Messages are applied in chain order, not relay order. When two messages in time (section 6, Silence) point at the same predecessor, the first in relay order continues the chain and the other is a **fork** that is never applied. A late message is never chosen. The sender of a fork plays a move again from the new state [T23, D03, T33].
 @@ 9. Deadlines
-+The silence rule (section 6) uses only the `sentAt` values in the chain, not `createdAt` and not any clock, except the reading instant: an agent uses its own clock, and the verifier uses the `asOf` its caller passes. An agent does not send a message at or after the deadline by its own clock; it records the close instead [T33].
++The silence rule (section 6) uses only the `sentAt` values in the chain, not `createdAt` and not any clock, except the reading instant: an agent uses its own clock, and the verifier uses the `asOf` its caller passes. An agent does not send a message at or after the deadline by its own clock; it records the close instead [T33]. If a message dated before the deadline arrives after the agent recorded the close, the agent sends one `DealDecline` when the new deadline has not passed by its own clock, and tells its human [D10, T35].
 @@ 10. Replay procedure
 -Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscript` takes the job id, the relay events, both agent `did:key` names, both approver `did:key` names, and the relay profile [T25b, T26].
 +Anyone can check a transcript without trusting a node [D01]. `verifyTermTranscript` takes the job id, the relay events, both agent `did:key` names, both approver `did:key` names, the relay profile, and an optional `asOf` instant [T25b, T26, T33].
 @@
 -4. Job event: it must carry a `term-job` record from the client, and there must be only one. Check `sheetSha256` against a known sheet and the preset manifests, then open the session with the anchor set to the hash of the job.
-+4. Job event: it must carry a `term-job` record from the client, and there must be only one. A job with `roundLimitPerTerm` fails `schema` [T34]. Check `sheetSha256` against a known sheet and the preset manifests, then open the session with the anchor set to the hash of the job.
++4. Job event: it must carry a `term-job` record from the client, and there must be only one. A job with any field other than the seven, `roundLimitPerTerm` included, fails `schema` [T34, D10, T35]. Check `sheetSha256` against a known sheet and the preset manifests, then open the session with the anchor set to the hash of the job.
 @@
 -5. Negotiation event: ... `expiresAt` must be after `createdAt`, and `createdAt` must be before the job's `expiresAt` (`deadlines`). The job must come first (`replay`).
 +5. Negotiation event: ... A `sentAt` that is not in the required form, or not before the message's `expiresAt`, fails `schema` [T33]. `expiresAt` must be after `createdAt`, and `createdAt` must be before the job's `expiresAt` (`deadlines`). The job must come first (`replay`).
@@ -265,7 +284,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 +8. Compute the silence deadline of the last state. If `asOf` is given and the silence rule closes the negotiation, report phase `no_deal`, reason `silence`, `closedAt`, `lastHash`, and `lastSentAt`. Without `asOf`, report only `silenceDeadline` [T33].
 @@
 -The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `chain`, and `signatures`, plus the fork and duplicate counts, and the phase.
-+The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `chain`, and `signatures`, plus the fork, duplicate, and late counts, the silence fields, and the phase [T33].
++The report gives pass or fail for `schema`, `issuers`, `replay`, `deadlines`, `chain`, and `signatures`, plus the fork, duplicate, and late counts, the silence fields, and the phase [T33]. When the reader stops at an implementation limit (event size, message count, added terms), it reports `limit`, which is neither a pass nor a fail [D10, T35].
 ```
 
 日本語の節（同じ内容。要所だけ）:
@@ -273,7 +292,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 ```diff
 @@ 6. 交渉の進み方
 -**始まり**：依頼する側が依頼票を出します。中身は `jobId`、`sheetId`、`sheetVersion`、`sheetSha256`（項目表の定義のハッシュ）、あらかじめ入れた値、`roundLimitPerTerm`、説明、`expiresAt` です [T19, T23]。
-+**始まり**：依頼する側が依頼票を出します。中身は `jobId`、`sheetId`、`sheetVersion`、`sheetSha256`（項目表の定義のハッシュ）、あらかじめ入れた値、説明、`expiresAt` です [T19, T23, T34]。`roundLimitPerTerm` を持つ依頼票は拒否します [T34]。
++**始まり**：依頼する側が依頼票を出します。中身は `jobId`、`sheetId`、`sheetVersion`、`sheetSha256`（項目表の定義のハッシュ）、あらかじめ入れた値、説明、`expiresAt` です [T19, T23, T34]。7つ以外の欄（`roundLimitPerTerm` を含む）を持つ依頼票は拒否します [T34, D10, T35]。
 @@
 -**往復の上限**：往復は項目ごとに数えます。上限を超える対案が来たとき、任意の項目なら外して交渉を続け、必須の項目なら交渉はまとまらずに終わります（`no_deal`） [T18, T18b]。
 +**往復の上限はない**：プロトコルは往復を数えません。交渉が終わるのは、`DealDecline`、返事の途絶え（下）、人の `reject`、依頼票の期限のときだけです [D09, T34]。完全に自動の取引では、代理人が自分の設定で `DealDecline` を出して止められます。この設定はプロトコルの決まりではありません [D09, T34]。
@@ -283,7 +302,7 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 -  - エージェントは、読み取った8つの欄（`jobId`、`sheetId`、`sheetVersion`、`sheetSha256`、`preset`、`roundLimitPerTerm`、`description`、`expiresAt`）で依頼票を作り直してからハッシュします。
 +  - エージェントは、読み取った7つの欄（`jobId`、`sheetId`、`sheetVersion`、`sheetSha256`、`preset`、`description`、`expiresAt`）で依頼票を作り直してからハッシュします [T34]。
 @@ 9. 期限
-+返事の途絶えの規則（第6節）は、鎖の中の `sentAt` だけを使います。`createdAt` も時計も使いません。例外は読む一瞬で、エージェントは自分の時計を、検証する側は呼び出す側が渡す `asOf` を使います。エージェントは、自分の時計で締め切りちょうど、またはそのあとに、メッセージを出しません。代わりに、閉じた記録を作ります [T33]。
++返事の途絶えの規則（第6節）は、鎖の中の `sentAt` だけを使います。`createdAt` も時計も使いません。例外は読む一瞬で、エージェントは自分の時計を、検証する側は呼び出す側が渡す `asOf` を使います。エージェントは、自分の時計で締め切りちょうど、またはそのあとに、メッセージを出しません。代わりに、閉じた記録を作ります [T33]。閉じたと記録したあとに締め切り前の時刻のメッセージが届いたら、新しい締め切りが自分の時計でまだ来ていなければ `DealDecline` を1回出し、人に知らせます [D10, T35]。
 @@ 10. 読み直しの手順
 +（英語の節の手順 4〜8 と報告の差分を、同じ内容で足す）
 ```
@@ -294,24 +313,26 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 2. **遅れたメッセージで記録が落ちる**（危険）: 今の検証は、当てはめに失敗したメッセージで `replay` を落とします。24 時間の規則をそのまま「断る」として入れると、締め切りのあとに1通出すだけで、正直な記録を不合格にできます。2.4 の 4 で、遅れたものは数えるだけにしました。
 3. **並べ替えで閉じさせる**（危険）: 中継の順で最初の候補を選ぶと、`id` の付け替えで、遅れたメッセージを正直な返事より先にできます。2.4 の 2 で、期限内のものだけを選ぶようにしました。D03 の狭めなので、人の扉です。
 4. **読む側の時計**（食い違いの元）: 「閉じた」を時計なしで言えるのは、閉じない場合（次のメッセージが期限内に来た）だけです。閉じた側は、読む一瞬 a を入力にしました（2.5）。
-5. **よみがえり**（限界）: 締め切りのあとに、締め切り前の時刻で出されたメッセージは、遅配と区別できません。第9節の問い3。
+5. **よみがえり**（限界）: 締め切りのあとに、締め切り前の時刻で出されたメッセージは、遅配と区別できません。待つ側の代理人の扱いを 2.7a で決めました（D10）。
 6. **さかのぼらせた時刻**（限界）: 相手の締め切りを早められます。得るものは「理由が `silence` になる」だけです。受領印まで防げません。
 7. **本文の古い記述**: `ix-spec-v0.3.md` の「各実装が守るルール」2 と 7、段階の表の理由。第5節で直します。
 8. **計算の量**（危険）: 無制限の往復で、検証と代理人の n² の計算が攻撃に使えます。Q12 で直します。
 9. **承認待ちの長さ**: 承認待ちは依頼票の期限まで続きます。依頼票の期限が遠いと長くなります。D09 のとおりで、変えません。
 
-## 9. ディレクターに聞きたいこと（推奨つき）
+## 9. 決まったこと（D10、2026-11-14）
 
-1. **最初のメッセージの前にも 24 時間をかけるか。** 推奨: かけない。依頼票は掲載されて相手を待つもので、24 時間で閉じると掲載の意味がなくなります。依頼票の期限が上限です。
-2. **検証に読む時刻（`asOf`）を渡さないとき、閉じたと言うか。** 推奨: 言わない。締め切りだけを報告します。中継の記録の中の一番遅い時刻を代わりに使う案は、未来の時刻を書いた1通で早く閉じさせられるので、勧めません。
-3. **閉じたと記録したあとに、締め切り前の時刻のメッセージが届いたら（遅配、またはさかのぼらせた時刻）。** 推奨: その代理人は、新しい締め切りがまだ来ていなければ、自動で `DealDecline` を出し、人に知らせる。記録が `declined` ではっきり終わります。もう一つの案は、人に見せて判断を待つことです（人が毎回判断する使い方なら、こちらが自然です）。
-4. **`sentAt` が前のメッセージより早いメッセージを断るか。** 推奨: 断らない。断ると、片方が未来の時刻を書いたとき、もう片方の正直な返事が「時刻が逆」として断られ、交渉を止められます。
-5. **依頼票の 7 欄以外の欄を拒否するか。** 推奨: 拒否する（代理人も検証も）。今は、余分な欄があると代理人と検証の anchor が食い違い、鎖の不合格という分かりにくい形で落ちます。はっきり「知らない欄」として断るほうが、両者が同じ結論になります。
-6. **読む側の実装の上限（1 イベントの大きさ、1 交渉のメッセージ数、足した項目の数）を置くか。** 推奨: 置く。プロトコルの決まりにはせず、入れ子 64 と同じ「この実装の上限」として、超えたら不合格ではなく「上限で止めた」と報告します。数は Q12 で提案します（例: 1 イベント 64 KiB、1 交渉 10,000 メッセージ）。
-7. **依頼票の期限を、`no_deal` の理由（`expired`）にするか。** 推奨: 今はしない。今の動き（期限で止まり、段階はそのまま）を変えるのは別の行で決めます。
-8. **交渉の機械の `counters`（往復の数）を消すか。** 推奨: 消す。プロトコルが数えないものを機械に残すと、規則のように読まれます。安全弁の数は代理人が鎖から数えます。
-9. **適合試験の `note-cannot-reset-rounds` の名前を残すか。** 推奨: 名前は残し、中身を「自由文で代理人の安全弁を外させようとしても N は変わらない」に向け替える。名前を変えると、`termInjectionCases` と記録の一覧も変わります。
-10. **安全弁 M（メッセージの数）を、参照実装の既定にするか。** 推奨: する。対案の数 N だけでは、`TermAdd` を出し続ける相手を止められません。
+Q11 で出た 10 の問いに、ディレクターが推奨のとおり答えました。どれも第2節から第8節の規則に入れてあります。
+
+1. **最初のメッセージの前には、24 時間をかけない。** 依頼票は掲載されて相手を待つものだからです。上限は依頼票の期限です（2.3）。
+2. **検証に読む時刻（`asOf`）が渡されないときは、閉じたと言わない。** 締め切りだけを報告します。中継の記録の中の一番遅い時刻を代わりに使うことはしません（2.5、第3節）。
+3. **閉じたと記録したあとに、締め切り前の時刻のメッセージが届いたら、新しい締め切りがまだ来ていなければ、代理人が自動で `DealDecline` を出し、人に知らせる。** 細かな条件は 2.7a です。
+4. **`sentAt` が前のメッセージより早いメッセージも、断らない**（2.3）。
+5. **依頼票の 7 欄以外の欄は、代理人も検証も拒否する**（2.8、第3節）。
+6. **読む側の実装の上限を置く。** プロトコルの決まりにはせず、超えたら不合格とは分けて `limit` と報告します。数は Q12 で提案します（2.11）。
+7. **依頼票の期限切れは、不成立の理由（`expired`）にしない。** 今のとおり、期限で止まり、段階はそのままです（2.8）。
+8. **交渉の機械の往復の数（`counters`）を消す。** 安全弁の数は、代理人が鎖から数えます（2.8、2.9）。
+9. **適合試験の `note-cannot-reset-rounds` は、名前を残し、中身を安全弁に向け替える**（第6節）。
+10. **安全弁に、メッセージの総数 M も持たせる**（2.9）。
 
 ## 10. 人の扉
 
@@ -322,4 +343,4 @@ silence(S(終), a) が真  ⇔  D(S(終)) があり、かつ a ≥ D(S(終))、�
 - 検証の規則を足すこと（`sentAt` の形、24 時間の規則、`asOf`、`late`）。
 - 枝分かれの決まり（D03）を「期限内のものの中で」に狭めること（`prevHash` の規則に触れる）。
 
-Q11 はディレクターとセキュリティレビュアーが読むこと、Q12 はそれに加えて、書いた人とは別の検証役が見ることを前提にします。
+D10 は、問いへの答えを決めたもので、この規則の文章を確認したものではありません。Q11 は、ディレクターとセキュリティレビュアーがこの文章を読むことを前提にします（まだ読まれていません）。Q12 は、それに加えて、書いた人とは別の検証役が見ることを前提にします。
