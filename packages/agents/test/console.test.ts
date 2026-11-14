@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Party } from "@ix/a2a-ext-negotiation";
-import { clockAt, createTermConsole, jobTag, createTermSide, createTermSigners, firstJsonObject, moveFromText, peersOf, sampleNow, sampleTermWorkerMandate } from "../src/index.js";
+import { clockAt, createTermConsole, maxPastedText, jobTag, createTermSide, createTermSigners, firstJsonObject, moveFromText, peersOf, sampleNow, sampleTermWorkerMandate } from "../src/index.js";
 import type { ConsoleView, TermConsole } from "../src/index.js";
 import { createTestBoard } from "./board.js";
 
@@ -81,6 +81,42 @@ describe("first JSON object in pasted text", () => {
   it("refuses a pasted approval or agreement draft", () => {
     expect(moveFromText('Done. {"type":"TermApproval","decision":"approve"}', "worker", clock).ok).toBe(false);
     expect(moveFromText('{"type":"TermAgreementDraft","agreement":{}}', "client", clock).ok).toBe(false);
+  });
+
+  it("refuses a well-formed pasted agreement draft before the decoder", () => {
+    const agreement = `{"agreementId":"job-trial-0001-agreement","jobId":"job-trial-0001","sheet":{"sheetId":"ix:sheet/web-site","version":1,"sheetSha256":"${"0".repeat(64)}"},"addedTerms":[],"terms":[{"termId":"web:responsive","value":true}],"transcriptHash":"unverified"}`;
+    const move = moveFromText(`{"type":"TermAgreementDraft","agreement":${agreement}}`, "client", clock);
+    expect(move).toEqual({ ok: false, reason: "承認と合意案は貼り付けでは送れません。人がボタンを押してください" });
+    const approval = moveFromText('{"type":"TermApproval","decision":"approve"}', "client", clock);
+    expect(approval).toEqual({ ok: false, reason: "承認と合意案は貼り付けでは送れません。人がボタンを押してください" });
+  });
+
+  it("reads nothing from text longer than the paste limit", () => {
+    const move = '{"type":"TermRefuse","termId":"ix:price"}';
+    expect(firstJsonObject(move + " ".repeat(maxPastedText - move.length))).toEqual({ type: "TermRefuse", termId: "ix:price" });
+    expect(firstJsonObject(move + " ".repeat(maxPastedText - move.length + 1))).toBeUndefined();
+  });
+
+  it("replaces pasted envelope fields with the page's own", () => {
+    const move = moveFromText(
+      '{"type":"TermRefuse","termId":"ix:price","sentAt":"1999-01-01T00:00:00.000Z","expiresAt":"2099-01-01T00:00:00.000Z","prevHash":"forged","signature":{"verification":"jws-eddsa","material":"forged"},"valueHash":"forged"}',
+      "worker",
+      clock,
+    );
+    expect(move.ok).toBe(true);
+    if (move.ok) {
+      expect(move.message.sentAt).toBe(sampleNow);
+      expect(move.message.expiresAt).toBe("2026-11-05T00:00:00.000Z");
+      expect(move.message.prevHash).toBe("unverified");
+      expect(move.message.signature).toEqual({ verification: "deferred", material: "unverified" });
+      expect(move.message).not.toHaveProperty("valueHash");
+    }
+  });
+
+  it("refuses a pasted prototype key through the decoder", () => {
+    const move = moveFromText('{"__proto__":{"type":"TermRefuse"},"type":"TermRefuse","termId":"ix:price"}', "worker", clock);
+    expect(move.ok).toBe(false);
+    expect(move.ok ? "" : move.reason).toContain("手の形が正しくありません");
   });
 
   it("refuses a field the message format does not know", () => {
