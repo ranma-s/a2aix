@@ -74,7 +74,7 @@ function limitExample(limit: TermLimit, definition: TermDefinition): TermJson {
   return checkTermValue(definition, shown) === undefined ? shown : generic;
 }
 
-const plainValueTypes: readonly string[] = ["money", "date", "datetime", "deadline", "integer", "duration", "boolean", "count", "code", "codes"];
+const plainValueTypes: readonly string[] = ["money", "date", "datetime", "deadline", "integer", "duration", "boolean", "code", "codes"];
 
 function ownTermIds(session: TermSession): ReadonlySet<string> {
   const sheet = findTermSheet(session.sheet.sheetId, session.sheet.version);
