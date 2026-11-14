@@ -228,6 +228,21 @@ describe("mock agents negotiating term by term", () => {
       expect(result.transcript).toEqual([]);
     });
 
+    it("stamps an escalation from the hook with the agent's own party", () => {
+      const result = runTermTrial(withDecide(() => ({ escalation: { party: "client", termId: "ix:price", reason: "outside_mandate" } })));
+      expect(result.escalations).toEqual([{ party: "worker", termId: "ix:price", reason: "outside_mandate" }]);
+    });
+
+    it("records a throwing hook as refused instead of crashing", () => {
+      const result = runTermTrial(
+        withDecide(() => {
+          throw new Error("bad paste");
+        }),
+      );
+      expect(result.refused).toEqual(["worker decide failed: bad paste"]);
+      expect(result.transcript).toEqual([]);
+    });
+
     it("does not let the hook accept a value outside the mandate", () => {
       const accept: TermDecider = (session) => {
         const price = session.terms.find((term) => term.definition.termId === "ix:price");

@@ -21,8 +21,8 @@ import { eventSigningInput, signingInputExcludingSignature } from "@ix/protocol-
 import type { JobBoard } from "./board.js";
 import { jobKind, jobTag, mockExtensionsHeader, negotiationKind } from "./kinds.js";
 import { redactFreeText } from "./redact.js";
-import { checkTermMandate, nextTurn, withinLimit } from "./terms.js";
-import type { TermAgentConfig, TermTrialEscalation } from "./terms.js";
+import { checkTermMandate, errorText, nextTurn, withinLimit } from "./terms.js";
+import type { TermAgentConfig, TermTrialEscalation, Turn } from "./terms.js";
 
 export const knownTermSheets: readonly TermSheet[] = [coreSheet, webSiteSheet];
 
@@ -496,7 +496,13 @@ async function step(side: Side, board: JobBoard, jobId: string, clock: Clock): P
     side.stopped = true;
     return false;
   }
-  const turn = nextTurn(side.config, side.session, clock);
+  let turn: Turn | undefined;
+  try {
+    turn = nextTurn(side.config, side.session, clock);
+  } catch (error) {
+    side.refusals.push(`decide failed: ${errorText(error)}`);
+    return false;
+  }
   if (turn?.escalation !== undefined) {
     side.escalations.push(turn.escalation);
     side.stopped = true;

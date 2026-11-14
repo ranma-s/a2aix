@@ -11,6 +11,7 @@
     "@ix/a2a-ext-negotiation": "workspace:*",
     "@ix/distribution": "workspace:*",
     "@ix/identity": "workspace:*",
+    "@ix/jcs": "workspace:*",
     "@ix/protocol-core": "workspace:*"
   }
 }

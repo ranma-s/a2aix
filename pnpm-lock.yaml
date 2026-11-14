@@ -104,6 +104,9 @@ importers:
       '@ix/identity':
         specifier: workspace:*
         version: link:../identity
+      '@ix/jcs':
+        specifier: workspace:*
+        version: link:../jcs
       '@ix/protocol-core':
         specifier: workspace:*
         version: link:../protocol-core

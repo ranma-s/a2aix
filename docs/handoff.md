@@ -20,6 +20,7 @@ An A2A extension for job exchange. Two agents (a poster and a worker) negotiate 
 | Independent replay with signature and chain checks | `@ix/verify` | Done |
 | Conformance items 3–6 pass inside a limit; 1–2 pending | `@ix/conformance` | Done |
 | Human approval signatures (mock human's own `did:key`) | `@ix/agents`, `@ix/verify` | Done (D06, T26); the real approval app is not built |
+| Console page of the hand-driven trial (paste a move, mandate check through `decide`, mock approval button) | `@ix/agents` `createTermConsole`, `scripts/browser/` | Q8 (T31); waits on the security reviewer |
 | Relay receipts, transparency log, mandates, wire A2A | — | Not built |
 
 ## Decisions that bind you

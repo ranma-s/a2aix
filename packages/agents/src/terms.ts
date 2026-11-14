@@ -308,8 +308,14 @@ function decideTerm(config: TermAgentConfig, term: TermState, clock: Clock): Tur
 }
 
 function guardedTurn(config: TermAgentConfig, session: TermSession, turn: Turn | undefined): Turn | undefined {
-  const message = turn?.message;
-  if (turn === undefined || message === undefined) {
+  if (turn === undefined) {
+    return undefined;
+  }
+  if (turn.escalation !== undefined) {
+    return { escalation: { ...turn.escalation, party: config.party } };
+  }
+  const message = turn.message;
+  if (message === undefined) {
     return turn;
   }
   const refuse = (termId: string, reason: TermTrialEscalation["reason"]): Turn => ({ escalation: { party: config.party, termId, reason } });
@@ -364,6 +370,10 @@ export function nextTurn(config: TermAgentConfig, session: TermSession, clock: C
   return undefined;
 }
 
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : "a value that is not an Error was thrown";
+}
+
 export function runTermTrial(input: TermTrialInput): TermTrialResult {
   for (const config of [input.client, input.worker]) {
     const problem = checkTermMandate(config.mandate);
@@ -388,7 +398,13 @@ export function runTermTrial(input: TermTrialInput): TermTrialResult {
   let idle = 0;
   for (let turn = 0; turn < input.maxTurns && idle < 2; turn += 1) {
     const config = party === "client" ? input.client : input.worker;
-    const next = nextTurn(config, session, input.clock);
+    let next: Turn | undefined;
+    try {
+      next = nextTurn(config, session, input.clock);
+    } catch (error) {
+      refused.push(`${config.party} decide failed: ${errorText(error)}`);
+      break;
+    }
     party = counterpartOf(party);
     if (next?.escalation !== undefined) {
       escalations.push(next.escalation);

@@ -8,7 +8,7 @@ export {
 } from "./kinds.js";
 export { clockAt, sampleNow } from "./clock.js";
 export { redactFreeText } from "./redact.js";
-export { checkTermLimit, checkTermMandate, runTermTrial, withinLimit } from "./terms.js";
+export { checkTermLimit, checkTermMandate, errorText, runTermTrial, withinLimit } from "./terms.js";
 export type {
   HumanDecision as TermHumanDecision,
   TermAgentConfig,
@@ -25,3 +25,5 @@ export type { TermJob, TermParties, TermPeers, TermRelayReport, TermSideHandle, 
 export { sampleTermClientMandate, sampleTermJob, sampleTermWorkerMandate } from "./sample-terms.js";
 export { termInjectionCases } from "./term-injection.js";
 export type { TermInjectionCase, TermInjectionPlace } from "./term-injection.js";
+export { createTermConsole, firstJsonObject, maxPastedText, moveFromText } from "./console.js";
+export type { ConsoleOutcome, ConsoleTermRow, ConsoleView, TermConsole } from "./console.js";

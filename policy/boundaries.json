@@ -67,6 +67,7 @@
         "@ix/a2a-ext-negotiation",
         "@ix/distribution",
         "@ix/identity",
+        "@ix/jcs",
         "@ix/protocol-core"
       ]
     },
