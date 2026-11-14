@@ -52,6 +52,10 @@ JCS（正規化）とハッシュは PR #3 で入りました（下の「PR #3 �
 
 2026-11-07、ディレクターがセキュリティレビュアーの役を自分で務め、署名の設計案（PR #20、[`spec/signature-design-draft.md`](spec/signature-design-draft.md)）のおすすめ案をすべて選びました。エージェントの署名は Ed25519、人間の承認はパスキー、本文を切り離した JWS（ヘッダーは `alg` と `kid` だけ）、試験の身元は `did:key` です。段階1のテストには、公開されている見本（RFC 8037）の公開鍵と署名だけを入れ、秘密鍵は入れません。段階2からは、テストの実行中にだけ鍵を作ります。失効は公開の前に作ります。時刻の裏付けは段階4の受領印で行います。各段階の実装も、ディレクターが振る舞いを確かめてからマージします。コードの細かい欠陥までは見ないため、公開の前にエンジニアのセキュリティレビュアーがもう一度見ます。
 
+## Q8 の確認（T31）
+
+2026-11-14、ディレクターがセキュリティレビュアーの役を自分で務め、PR #9（手で動かす試験の操作ページ）を、9f9bf99 から作ったオフラインのページで確かめました。確かめたのは、貼り付けた `TermApproval` が拒否されること、委任の外の金額（99,999,999 円）の提案が送られずにその側が止まること、全項目を確定させてから合意案ボタンと両者の承認ボタンで「合意しました」になることです。これより前に、書いた人とは別のセッションの検証役が3回見ています。承認ボタンの鍵は、ページのメモリにある模試の人間の鍵で、本物の人の承認ではありません。ディレクターはコードを1行ずつは見ていないため、公開の前に、エンジニアのセキュリティレビュアーがもう一度見ます。
+
 ## 弁護士（スポット）
 
 常駐しません。必要なときに依頼します。最初に見るのは次です。
@@ -86,6 +90,10 @@ On 2026-11-03 the director acted as the security reviewer and merged PR #3 (RFC 
 ## Signature design review (D04)
 
 On 2026-11-07 the director acted as the security reviewer and chose every recommended option in the signature design draft (PR #20, [`spec/signature-design-draft.md`](spec/signature-design-draft.md)): Ed25519 for agent signatures, passkeys for human approvals, detached JWS with only `alg` and `kid` in the header, and `did:key` for the trial. Stage 1 tests carry only the public key and signature of the published RFC 8037 sample, never its private key. From stage 2, tests create keys only while they run. Revocation is built before public release. Time is backed by relay receipts in stage 4. The director also checks each stage's behavior before it merges. The director does not review code line by line, so an engineering security reviewer looks again before public release.
+
+## Q8 review (T31)
+
+On 2026-11-14 the director acted as the security reviewer and checked PR #9 (the console page of the hand-driven trial) on the offline page built from 9f9bf99. The director checked that a pasted `TermApproval` is refused, that a proposal outside the mandate (99,999,999 yen) is not sent and stops that side, and that once every term is fixed, the agreement-draft button and both approval buttons reach "agreed". Before that, verifier sessions other than the author looked at it three times. The approval button signs with the mock human's key in page memory; it is not a real person's approval. The director does not review code line by line, so an engineering security reviewer looks again before public release.
 
 ## Signature stage 2 (T25)
 
