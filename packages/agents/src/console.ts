@@ -1,6 +1,7 @@
 import { applyTermMessage, buildTermAgreement, decodeTermMessage, readyForAgreement, signatureVerification, valueHashVerification } from "@ix/a2a-ext-negotiation";
 import type { Clock, Party, TermApprovalMessage, TermMessage, TermSession, TermState } from "@ix/a2a-ext-negotiation";
 import { canonicalize, parseJson } from "@ix/jcs";
+import { buildAssistantPrompt } from "./assistant-prompt.js";
 import type { JobBoard } from "./board.js";
 import { sampleTermClientMandate, sampleTermJob, sampleTermWorkerMandate } from "./sample-terms.js";
 import { createTermSide, peersOf } from "./term-relay.js";
@@ -39,6 +40,7 @@ export type TermConsole = {
   readonly registerSampleJob: () => Promise<ConsoleOutcome>;
   readonly jobIds: () => readonly string[];
   readonly view: (jobId: string, party: Party) => ConsoleView | undefined;
+  readonly assistantPrompt: (jobId: string, party: Party) => string | undefined;
   readonly pasteMove: (jobId: string, party: Party, text: string) => Promise<ConsoleOutcome>;
   readonly draftAgreement: (jobId: string) => Promise<ConsoleOutcome>;
   readonly approve: (jobId: string, party: Party, decision: "approve" | "reject") => Promise<ConsoleOutcome>;
@@ -375,6 +377,23 @@ export function createTermConsole(input: {
         escalations: report.escalations.map((escalation) => `${escalation.termId === "" ? "項目なし" : escalation.termId}: ${escalationText[escalation.reason]}`),
         shownFreeText: report.shownFreeText,
       };
+    },
+    assistantPrompt(jobId, party) {
+      const job = find(jobId);
+      if (job === undefined) {
+        return undefined;
+      }
+      const seat = seatOf(job, party);
+      const report = seat.side.report();
+      const session = report.session;
+      return buildAssistantPrompt({
+        session,
+        party,
+        mandate: mandates[party],
+        stopped: seat.side.finished() && session?.phase !== "agreed" && session?.phase !== "no_deal",
+        freeText: report.shownFreeText,
+        clock: input.clock,
+      });
     },
     async pasteMove(jobId, party, text) {
       const move = moveFromText(text, party, input.clock);

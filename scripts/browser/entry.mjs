@@ -75,6 +75,7 @@ const renderSide = (party) => {
   listInto(byId(`${party}-moves`), view?.moves ?? [], "—");
   listInto(byId(`${party}-problems`), [...(view?.escalations ?? []).map((text) => `権限外: ${text}`), ...(view?.refusals ?? [])], "なし");
   listInto(byId(`${party}-free`), view?.shownFreeText ?? [], "なし");
+  byId(`${party}-prompt`).textContent = (jobId === undefined ? undefined : trial.assistantPrompt(jobId, party)) ?? "仕事を登録すると、ここにアシスタントに渡す文章が出ます。";
 };
 
 const render = () => {
@@ -145,6 +146,25 @@ for (const party of ["client", "worker"]) {
   });
   byId(`${party}-reject`).addEventListener("click", () => {
     void run(needJob((jobId) => trial.approve(jobId, party, "reject")));
+  });
+}
+for (const party of ["client", "worker"]) {
+  byId(`${party}-prompt-copy`).addEventListener("click", () => {
+    const note = byId(`${party}-prompt-note`);
+    const text = byId(`${party}-prompt`).textContent ?? "";
+    const clipboard = navigator.clipboard;
+    if (clipboard === undefined) {
+      note.textContent = "このブラウザではコピーできません。枠の文章を選んでコピーしてください";
+      return;
+    }
+    clipboard.writeText(text).then(
+      () => {
+        note.textContent = "コピーしました";
+      },
+      () => {
+        note.textContent = "コピーできませんでした。枠の文章を選んでコピーしてください";
+      },
+    );
   });
 }
 byId("client-draft").addEventListener("click", () => {

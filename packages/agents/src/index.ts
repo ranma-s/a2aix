@@ -27,3 +27,5 @@ export { termInjectionCases } from "./term-injection.js";
 export type { TermInjectionCase, TermInjectionPlace } from "./term-injection.js";
 export { createTermConsole, firstJsonObject, maxPastedText, moveFromText } from "./console.js";
 export type { ConsoleOutcome, ConsoleTermRow, ConsoleView, TermConsole } from "./console.js";
+export { buildAssistantPrompt } from "./assistant-prompt.js";
+export type { AssistantPromptInput } from "./assistant-prompt.js";
