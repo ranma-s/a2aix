@@ -119,6 +119,7 @@ export function firstJsonObject(text: string): { readonly [key: string]: unknown
     try {
       parsed = parseJson(text.slice(start, end + 1));
     } catch {
+      start = end;
       continue;
     }
     if (isPlainObject(parsed)) {
@@ -144,6 +145,9 @@ export function moveFromText(text: string, party: Party, clock: Clock): { readon
     if (!(key in merged)) {
       merged[key] = value;
     }
+  }
+  if (merged["type"] === "TermApproval" || merged["type"] === "TermAgreementDraft") {
+    return { ok: false, reason: "承認と合意案は貼り付けでは送れません。人がボタンを押してください" };
   }
   if (merged["type"] === "TermAccept") {
     merged["valueHash"] = valueHashVerification;
